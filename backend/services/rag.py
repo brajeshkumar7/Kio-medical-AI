@@ -3,6 +3,7 @@ import re
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
+from difflib import get_close_matches
 from pathlib import Path
 
 from langchain.chains import create_history_aware_retriever
@@ -17,10 +18,12 @@ from backend.config import Settings
 _TOKEN_PATTERN = re.compile(r"[^\W_]+", re.UNICODE)
 _STOP_WORDS = {
     "a", "about", "an", "and", "are", "as", "at", "be", "can", "define",
-    "describe", "do", "does", "explain", "for", "from", "how", "i", "in",
-    "is", "it", "me", "of", "on", "or", "please", "tell", "the", "this",
-    "to", "what", "when", "where", "which", "who", "why", "with",
+    "describe", "do", "does", "explain", "for", "from", "give", "how", "i",
+    "in", "is", "it", "kind", "kinds", "me", "of", "on", "or", "please",
+    "some", "tell", "the", "this", "to", "type", "types", "what", "when",
+    "where", "which", "who", "why", "with",
 }
+_COMMON_QUERY_TYPOS = {"typ": "type"}
 
 
 @dataclass(frozen=True)
@@ -68,9 +71,10 @@ class LexicalMedicalIndex:
             term: math.log(1 + (count - frequency + 0.5) / (frequency + 0.5))
             for term, frequency in document_frequency.items()
         }
+        self.vocabulary = tuple(self.inverse_document_frequency)
 
     def search(self, query: str, *, k: int) -> list[Document]:
-        query_terms = list(dict.fromkeys(_tokens(query)))
+        query_terms = self._query_terms(query)
         if not query_terms or not self.documents:
             return []
         scored = []
@@ -87,6 +91,26 @@ class LexicalMedicalIndex:
                 if self._is_neighbor(index, neighbor) and neighbor not in ranked:
                     ranked.append(neighbor)
         return [self.documents[index] for index in ranked]
+
+    def _query_terms(self, query: str) -> list[str]:
+        normalized = []
+        plural_roots = set()
+        for term in _tokens(query):
+            term = _COMMON_QUERY_TYPOS.get(term, term)
+            singular = term[:-1] if term.endswith("s") else ""
+            if singular in self.inverse_document_frequency:
+                term = singular
+                plural_roots.add(term)
+            elif term not in self.inverse_document_frequency and len(term) >= 5:
+                matches = get_close_matches(term, self.vocabulary, n=1, cutoff=0.86)
+                if matches:
+                    term = matches[0]
+            if term not in _STOP_WORDS and term not in normalized:
+                normalized.append(term)
+        return [
+            term for term in normalized
+            if not any(term != root and _one_edit_apart(term, root) for root in plural_roots)
+        ]
 
     def _is_neighbor(self, origin: int, candidate: int) -> bool:
         if candidate < 0 or candidate >= len(self.documents):
@@ -222,6 +246,23 @@ def _tokens(value: str) -> list[str]:
     tokens = [token.casefold() for token in _TOKEN_PATTERN.findall(value)]
     meaningful = [token for token in tokens if token not in _STOP_WORDS and len(token) > 1]
     return meaningful or tokens
+
+
+def _one_edit_apart(first: str, second: str) -> bool:
+    if abs(len(first) - len(second)) > 1:
+        return False
+    if len(first) == len(second):
+        return sum(left != right for left, right in zip(first, second)) <= 1
+    shorter, longer = (first, second) if len(first) < len(second) else (second, first)
+    index = offset = 0
+    while index < len(shorter) and index + offset < len(longer):
+        if shorter[index] == longer[index + offset]:
+            index += 1
+        elif offset:
+            return False
+        else:
+            offset = 1
+    return True
 
 
 def _fuse_documents(semantic, lexical, limit: int) -> list[Document]:

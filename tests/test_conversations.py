@@ -2,7 +2,7 @@ import pytest
 from types import SimpleNamespace
 
 from backend.auth import AuthenticatedUser
-from backend.ai.prompts import SYSTEM_PROMPT
+from backend.ai.prompts import EVIDENCE_REVIEW_PROMPT, SYSTEM_PROMPT
 from backend.config import Settings
 from backend.extensions import db
 from backend.services.conversation_memory import _metadata_for_cited_sources
@@ -159,4 +159,8 @@ def test_medical_prompt_enforces_evidence_categories_and_language_quality():
     assert "Common findings, associated effects, complications, and warning signs" in SYSTEM_PROMPT
     assert "Never invent thresholds, durations, treatment steps, or reasons to seek care" in SYSTEM_PROMPT
     assert "Do not leak untranslated English words" in SYSTEM_PROMPT
-    assert "Use a Markdown table only for a genuine comparison" in SYSTEM_PROMPT
+    assert "two to five descriptive headings" in SYSTEM_PROMPT
+    assert "compact Markdown table" in SYSTEM_PROMPT
+    assert "Do not repeat the user's question as a heading" in SYSTEM_PROMPT
+    assert "never flatten a well-structured draft" in EVIDENCE_REVIEW_PROMPT
+    assert "Formatting never justifies adding a fact" in EVIDENCE_REVIEW_PROMPT
