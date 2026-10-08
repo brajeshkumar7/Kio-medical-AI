@@ -1,5 +1,5 @@
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_classic.chains import create_retrieval_chain
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from src.ai.llm import get_llm
 from src.ai.prompts import get_rag_prompt
 from src.ai.vector_store import VectorStoreManager

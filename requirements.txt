@@ -1,4 +1,6 @@
 langchain
+langchain-classic
+langchain-pinecone
 flask
 pypdf
 python-dotenv
