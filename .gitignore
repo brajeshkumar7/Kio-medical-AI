@@ -172,4 +172,9 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+node_modules/
+.next/
+out/
+frontend/.env.local
+*.tsbuildinfo
 /Data/
