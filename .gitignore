@@ -177,3 +177,4 @@ node_modules/
 out/
 frontend/.env.local
 *.tsbuildinfo
+/Data/

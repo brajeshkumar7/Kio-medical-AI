@@ -3,10 +3,6 @@
 KIO is an enterprise medical AI landing experience and authenticated RAG
 assistant with durable conversation history.
 
-For the complete as-built architecture, technology rationale, workflows, API
-contracts, setup, and operations guide, see
-`docs/KIO_TECHNICAL_DOCUMENTATION.md`.
-
 ## Architecture
 
 - frontend: Next.js 16, TypeScript, Tailwind CSS, Clerk authentication, the
@@ -90,7 +86,6 @@ Set these values in frontend/.env.local:
     CLERK_SECRET_KEY=sk_test_...
     NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
     NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
-    NEXT_PUBLIC_CLERK_KEYLESS_DISABLED=true
 
 Start Next.js:
 
