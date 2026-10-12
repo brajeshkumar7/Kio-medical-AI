@@ -13,6 +13,8 @@ def create_embeddings(settings: Settings) -> OpenAIEmbeddings:
         check_embedding_ctx_length=False,
         model_kwargs={"encoding_format": "float"},
         chunk_size=32,
+        timeout=45,
+        max_retries=0,
     )
 
 def create_chat_model(settings: Settings) -> ChatOpenAI:

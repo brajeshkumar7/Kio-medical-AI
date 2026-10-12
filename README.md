@@ -1,12 +1,11 @@
 # KIO Medical AI
 
-KIO is an enterprise medical AI landing experience and authenticated RAG
-assistant with durable conversation history.
+KIO is an authenticated medical AI assistant with durable conversation history.
 
 ## Architecture
 
-- frontend: Next.js 16, TypeScript, Tailwind CSS, Clerk authentication, the
-  public KIO landing page, and the protected clinical console.
+- frontend: Next.js 16, TypeScript, Tailwind CSS, Clerk authentication, and
+  the protected clinical console.
 - backend: Flask APIs, Clerk JWT verification, SQLAlchemy, and RAG services.
 - PostgreSQL: users, conversations, and messages.
 - retrieval: Pinecone semantic search fused with a cached local BM25 index and
@@ -84,16 +83,16 @@ Set these values in frontend/.env.local:
     NEXT_PUBLIC_API_URL=http://localhost:8080
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
     CLERK_SECRET_KEY=sk_test_...
-    NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+    NEXT_PUBLIC_CLERK_SIGN_IN_URL=/
     NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 
 Start Next.js:
 
     npm run dev
 
-Open http://localhost:3000 for the public KIO Medical AI landing page. Launch
-the protected workspace at http://localhost:3000/console, create an account,
-and send a message. KIO creates a PostgreSQL conversation on the first message,
+Open http://localhost:3000 to sign in or create an account. After sign-in,
+KIO opens the protected workspace at http://localhost:3000/console. Send a
+message to create a PostgreSQL conversation on the first message. KIO
 stores both sides of every exchange, and reloads the user-owned history after
 future sign-ins.
 

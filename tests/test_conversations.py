@@ -1,4 +1,6 @@
 import pytest
+import httpx
+from openai import AuthenticationError
 from types import SimpleNamespace
 
 from backend.auth import AuthenticatedUser
@@ -135,6 +137,27 @@ def test_streams_and_persists_assistant_message(app, client):
         f"/api/conversations/{conversation['id']}", headers=auth()
     ).get_json()["conversation"]
     assert [message["role"] for message in detail["messages"]] == ["user", "assistant"]
+
+
+def test_stream_reports_openrouter_authentication_failure(app, client):
+    conversation = client.post("/api/conversations", headers=auth()).get_json()["conversation"]
+
+    def reject_key(_question, _history):
+        response = httpx.Response(
+            401,
+            request=httpx.Request("POST", "https://openrouter.ai/api/v1/embeddings"),
+        )
+        raise AuthenticationError("User not found", response=response, body=None)
+
+    app.extensions["fake_qa"].stream_answer = reject_key
+    response = client.post(
+        f"/api/conversations/{conversation['id']}/messages/stream",
+        headers=auth(),
+        json={"message": "What causes a cough?"},
+    )
+
+    assert response.status_code == 502
+    assert "Update OPENROUTER_API_KEY" in response.get_json()["error"]
 
 
 def test_only_sources_cited_in_answer_are_exposed():

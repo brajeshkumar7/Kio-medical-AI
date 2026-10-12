@@ -28,7 +28,13 @@ const appearance = {
 };
 
 
-export default function ClerkAuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
+export default function ClerkAuthForm({
+  mode,
+  onHomePage = false,
+}: {
+  mode: "sign-in" | "sign-up";
+  onHomePage?: boolean;
+}) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
@@ -43,7 +49,7 @@ export default function ClerkAuthForm({ mode }: { mode: "sign-in" | "sign-up" })
 
   return mode === "sign-in" ? (
     <SignIn
-      path="/sign-in"
+      path={onHomePage ? "/" : "/sign-in"}
       routing="path"
       signUpUrl="/sign-up"
       forceRedirectUrl="/console"
@@ -53,7 +59,7 @@ export default function ClerkAuthForm({ mode }: { mode: "sign-in" | "sign-up" })
     <SignUp
       path="/sign-up"
       routing="path"
-      signInUrl="/sign-in"
+      signInUrl="/"
       forceRedirectUrl="/console"
       appearance={appearance}
     />

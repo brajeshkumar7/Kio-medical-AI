@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 
 from flask import Blueprint, Response, current_app, g, jsonify, request, stream_with_context
+from openai import AuthenticationError
 
 from backend.auth import require_auth
 from backend.models import Conversation, Message
@@ -9,6 +10,10 @@ from backend.services.conversation_memory import ConversationNotFoundError
 
 
 conversations_api = Blueprint("conversations", __name__, url_prefix="/api/conversations")
+_OPENROUTER_AUTH_ERROR = (
+    "OpenRouter rejected the API key. Update OPENROUTER_API_KEY in the backend .env "
+    "and restart the server."
+)
 
 
 def _iso(value: datetime) -> str:
@@ -94,6 +99,9 @@ def send_message(conversation_id: str):
         result = _service().send_message(_clerk_user_id(), conversation_id, content)
     except ConversationNotFoundError:
         return jsonify({"error": "Conversation not found"}), 404
+    except AuthenticationError:
+        current_app.logger.exception("OpenRouter authentication failed")
+        return jsonify({"error": _OPENROUTER_AUTH_ERROR}), 502
     except Exception:
         current_app.logger.exception("Question answering failed")
         return jsonify({"error": "Unable to answer the question"}), 502
@@ -122,6 +130,9 @@ def stream_message(conversation_id: str):
         pending = _service().start_message_stream(clerk_user_id, conversation_id, content)
     except ConversationNotFoundError:
         return jsonify({"error": "Conversation not found"}), 404
+    except AuthenticationError:
+        current_app.logger.exception("OpenRouter authentication failed")
+        return jsonify({"error": _OPENROUTER_AUTH_ERROR}), 502
     except Exception:
         current_app.logger.exception("Question answering stream could not start")
         return jsonify({"error": "Unable to answer the question"}), 502
@@ -162,6 +173,9 @@ def stream_message(conversation_id: str):
             )
         except GeneratorExit:
             raise
+        except AuthenticationError:
+            current_app.logger.exception("OpenRouter authentication failed during streaming")
+            yield _stream_event("error", error=_OPENROUTER_AUTH_ERROR)
         except Exception:
             current_app.logger.exception("Question answering stream failed")
             yield _stream_event("error", error="Unable to answer the question")

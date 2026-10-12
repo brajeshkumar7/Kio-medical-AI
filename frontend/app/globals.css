@@ -260,61 +260,7 @@ button:focus-visible, textarea:focus-visible { outline: 3px solid color-mix(in s
   .message-list { padding-top: 10px; }.conversation-heading h2 { font-size: 18px; }.message-bubble { max-width: 86%; }
 }
 
-#kio-workspace {
-  --landing-bg: #fafbfc;
-  --landing-surface: rgba(255, 255, 255, 0.75);
-  --landing-surface-solid: #ffffff;
-  --landing-ink: #0f172a;
-  --landing-muted: #5c6b7d;
-  --landing-line: rgba(15, 23, 42, 0.12);
-  --landing-accent: #0f766e;
-  --landing-accent-soft: rgba(15, 118, 110, 0.1);
-  --landing-accent-contrast: #ffffff;
-  color: var(--landing-ink);
-  background: var(--landing-bg);
-  font-family: var(--font-sans);
-}
-
-#kio-workspace[data-theme="dark"] {
-  --landing-bg: #000000;
-  --landing-surface: rgba(255, 255, 255, 0.045);
-  --landing-surface-solid: #0a0a0a;
-  --landing-ink: #ffffff;
-  --landing-muted: #a3a3a3;
-  --landing-line: rgba(255, 255, 255, 0.14);
-  --landing-accent: #6ee7b7;
-  --landing-accent-soft: rgba(110, 231, 183, 0.11);
-  --landing-accent-contrast: #07120e;
-}
-
-.molecular-visual::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, transparent 55%, rgba(3, 7, 18, 0.88) 100%);
-  pointer-events: none;
-}
-
-.signal-line {
-  animation: signal-scan 3.6s linear infinite;
-}
-
-.status-pulse {
-  animation: status-pulse 2s ease-in-out infinite;
-}
-
-@keyframes signal-scan {
-  0% { transform: translateX(-110%); }
-  100% { transform: translateX(410%); }
-}
-
-@keyframes status-pulse {
-  0%, 100% { opacity: .45; }
-  50% { opacity: 1; }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .signal-line, .status-pulse { animation: none; }
   * { scroll-behavior: auto !important; }
 }
 
@@ -629,13 +575,6 @@ html[data-theme="dark"] .sidebar-scrim { background: rgba(0, 0, 0, .58); }
 .clerk-title { font-size: 20px; font-weight: 600; line-height: 1.4; }
 .clerk-subtitle { font-size: 16px; font-weight: 400; line-height: 1.5; }
 .clerk-primary-button, .clerk-social-button, .clerk-link { font-size: 14px; font-weight: 500; }
-
-#kio-workspace { font-family: var(--font-sans); font-size: 16px; line-height: 1.5; }
-#kio-workspace nav a { font-size: 14px; font-weight: 500; }
-#kio-workspace p { font-size: 16px; font-weight: 400; line-height: 1.6; }
-#kio-workspace article h3 { font-size: 20px; font-weight: 600; line-height: 1.4; }
-#kio-workspace footer h3 { font-size: 14px; font-weight: 600; }
-#kio-workspace footer a { font-size: 14px; font-weight: 400; line-height: 1.5; }
 
 @media (max-width: 760px) {
   .message-bubble, .composer textarea { font-size: 16px; }
