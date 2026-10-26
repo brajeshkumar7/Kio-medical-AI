@@ -173,3 +173,21 @@ def test_source_references_normalize_windows_and_posix_paths():
 
     assert len(sources) == 1
     assert document_sources == [sources[0], sources[0]]
+
+
+
+def test_output_safety_remains_active_with_and_without_evidence_review(safety_checker):
+    from backend.services.safety import SafetyCheckedMedicalQA, SAFE_REDIRECTION
+    for enabled in (True, False):
+        calls = []
+        def generate(_messages, **_kwargs):
+            calls.append(True)
+            return AIMessage(content="A generated answer [1].")
+        settings = Settings(pinecone_api_key="test", openrouter_api_key="test", answer_review_enabled=enabled)
+        document = Document(page_content="Reference text", metadata={"source": "reference.pdf", "page": 0})
+        qa = MedicalQuestionAnswering(FakeVectorStore([document]), RunnableLambda(generate), settings)
+        safety_checker.output_safe = False
+        result = SafetyCheckedMedicalQA(qa, safety_checker).stream_answer("A question", [])
+        assert "".join(result.chunks) == SAFE_REDIRECTION
+        assert result.metadata == {"sources": []}
+        assert len(calls) == (2 if enabled else 1)

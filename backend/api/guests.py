@@ -15,6 +15,7 @@ from backend.auth import require_auth
 from backend.extensions import db
 from backend.services.conversation_memory import ConversationNotFoundError
 from backend.services.guest_access import GuestAccessError, GuestQuotaExceeded
+from backend.services.safety import SafetyCheckUnavailable, SAFETY_ERROR_CODE, SAFETY_RETRY_MESSAGE
 
 
 guest_api = Blueprint("guests", __name__, url_prefix="/api/guest")
@@ -130,7 +131,10 @@ def guest_stream_message(conversation_id: str):
     try:
         pending = _memory().start_message_stream(guest_id, conversation_id, content, guest=True)
     except Exception as error:
+        db.session.rollback()
         _access().release(reservation)
+        if isinstance(error, SafetyCheckUnavailable):
+            return jsonify({"error": SAFETY_RETRY_MESSAGE, "code": SAFETY_ERROR_CODE}), 503
         if isinstance(error, ConversationNotFoundError):
             return jsonify({"error": "Conversation not found"}), 404
         if isinstance(error, AuthenticationError):
@@ -173,6 +177,9 @@ def guest_stream_message(conversation_id: str):
             db.session.rollback()
             _memory().discard_failed_guest_message(guest_id, conversation_id, pending.user_message.id)
             _access().release(reservation)
+            if isinstance(error, SafetyCheckUnavailable):
+                yield _stream_event("error", error=SAFETY_RETRY_MESSAGE, code=SAFETY_ERROR_CODE)
+                return
             current_app.logger.exception("Guest question answering stream failed")
             yield _stream_event(
                 "error",

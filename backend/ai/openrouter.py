@@ -53,7 +53,8 @@ def create_safety_model(settings: Settings) -> ChatOpenAI:
         base_url=settings.openrouter_base_url,
         temperature=0,
         max_tokens=256,
-        timeout=60,
-        max_retries=1,
+        timeout=20,
+        max_retries=0,
         default_headers=_headers(settings),
+        extra_body={"provider": {"zdr": True}},
     )

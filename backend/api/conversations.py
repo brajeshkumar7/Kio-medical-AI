@@ -7,6 +7,8 @@ from openai import AuthenticationError
 from backend.auth import require_auth
 from backend.models import Conversation, Message
 from backend.services.conversation_memory import ConversationNotFoundError
+from backend.extensions import db
+from backend.services.safety import SafetyCheckUnavailable, SAFETY_ERROR_CODE, SAFETY_RETRY_MESSAGE
 
 
 conversations_api = Blueprint("conversations", __name__, url_prefix="/api/conversations")
@@ -99,6 +101,9 @@ def send_message(conversation_id: str):
         result = _service().send_message(_clerk_user_id(), conversation_id, content)
     except ConversationNotFoundError:
         return jsonify({"error": "Conversation not found"}), 404
+    except SafetyCheckUnavailable:
+        db.session.rollback()
+        return jsonify({"error": SAFETY_RETRY_MESSAGE, "code": SAFETY_ERROR_CODE}), 503
     except AuthenticationError:
         current_app.logger.exception("OpenRouter authentication failed")
         return jsonify({"error": _OPENROUTER_AUTH_ERROR}), 502
@@ -130,6 +135,9 @@ def stream_message(conversation_id: str):
         pending = _service().start_message_stream(clerk_user_id, conversation_id, content)
     except ConversationNotFoundError:
         return jsonify({"error": "Conversation not found"}), 404
+    except SafetyCheckUnavailable:
+        db.session.rollback()
+        return jsonify({"error": SAFETY_RETRY_MESSAGE, "code": SAFETY_ERROR_CODE}), 503
     except AuthenticationError:
         current_app.logger.exception("OpenRouter authentication failed")
         return jsonify({"error": _OPENROUTER_AUTH_ERROR}), 502
@@ -173,6 +181,9 @@ def stream_message(conversation_id: str):
             )
         except GeneratorExit:
             raise
+        except SafetyCheckUnavailable:
+            db.session.rollback()
+            yield _stream_event("error", error=SAFETY_RETRY_MESSAGE, code=SAFETY_ERROR_CODE)
         except AuthenticationError:
             current_app.logger.exception("OpenRouter authentication failed during streaming")
             yield _stream_event("error", error=_OPENROUTER_AUTH_ERROR)

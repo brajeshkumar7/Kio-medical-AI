@@ -36,7 +36,7 @@ class FakeMedicalQA:
 
 
 @pytest.fixture()
-def app(tmp_path):
+def app(tmp_path, safety_checker):
     qa = FakeMedicalQA()
     settings = Settings(
         pinecone_api_key="test",
@@ -48,6 +48,7 @@ def app(tmp_path):
         settings,
         medical_qa=qa,
         authenticator=FakeAuthenticator(),
+        safety_checker=safety_checker,
     )
     application.config.update(TESTING=True)
     application.extensions["fake_qa"] = qa
@@ -183,3 +184,54 @@ def test_medical_prompt_enforces_evidence_categories_and_language_quality():
     assert "Never invent thresholds, durations, treatment steps, or reasons to seek care" in SYSTEM_PROMPT
     assert "Do not leak untranslated English words" in SYSTEM_PROMPT
     assert "Use a Markdown table only for a genuine comparison" in SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("stage", ["input", "output"])
+def test_safety_blocks_are_safe_responses_without_rejected_text(app, client, safety_checker, streaming, stage):
+    from backend.services.safety import SAFE_REDIRECTION
+    safety_checker.input_safe = stage != "input"
+    safety_checker.output_safe = stage != "output"
+    conversation = client.post("/api/conversations", headers=auth()).get_json()["conversation"]
+    suffix = "/messages/stream" if streaming else "/messages"
+    response = client.post(f"/api/conversations/{conversation['id']}{suffix}", headers=auth(), json={"message": "Test question"})
+    assert response.status_code == (200 if streaming else 201)
+    if streaming:
+        events = [__import__("json").loads(line) for line in response.text.splitlines()]
+        assert "".join(e.get("content", "") for e in events) == SAFE_REDIRECTION
+        assert events[-1]["assistantMessage"]["metadata"]["sources"] == []
+    else:
+        assert response.get_json()["assistantMessage"]["content"] == SAFE_REDIRECTION
+    saved = client.get(f"/api/conversations/{conversation['id']}", headers=auth()).get_json()["conversation"]["messages"]
+    assert saved[-1]["content"] == SAFE_REDIRECTION
+    assert "Answer to:" not in saved[-1]["content"]
+    if stage == "input":
+        assert app.extensions["fake_qa"].calls == []
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("stage", ["input", "output"])
+def test_safety_unavailable_never_saves_or_streams_an_answer(client, safety_checker, streaming, stage):
+    safety_checker.fail_stage = stage
+    conversation = client.post("/api/conversations", headers=auth()).get_json()["conversation"]
+    suffix = "/messages/stream" if streaming else "/messages"
+    response = client.post(f"/api/conversations/{conversation['id']}{suffix}", headers=auth(), json={"message": "Test question"})
+    if streaming and stage == "output":
+        assert response.status_code == 200
+        events = [__import__("json").loads(line) for line in response.text.splitlines()]
+        assert [e["type"] for e in events] == ["start", "error"]
+        assert events[-1]["code"] == "SAFETY_CHECK_UNAVAILABLE"
+    else:
+        assert response.status_code == 503
+        assert response.get_json()["code"] == "SAFETY_CHECK_UNAVAILABLE"
+    saved = client.get(f"/api/conversations/{conversation['id']}", headers=auth()).get_json()["conversation"]["messages"]
+    assert not any(m["role"] == "assistant" for m in saved)
+    if stage == "input" or not streaming:
+        assert saved == []
+
+
+def test_ownership_is_checked_before_moderation(client, safety_checker):
+    conversation = client.post("/api/conversations", headers=auth()).get_json()["conversation"]
+    response = client.post(f"/api/conversations/{conversation['id']}/messages/stream", headers=auth("user-two"), json={"message": "Test"})
+    assert response.status_code == 404
+    assert safety_checker.calls == []

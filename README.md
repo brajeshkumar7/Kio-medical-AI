@@ -114,3 +114,13 @@ The daily GitHub Actions cleanup workflow removes guest sessions and
 conversations inactive for 30 days. Configure the repository's `DATABASE_URL`
 Actions secret so it can connect to PostgreSQL. You can also run
 `python -m backend.jobs.purge_guests` manually with `DATABASE_URL` set.
+
+## Input and output safety checks
+
+Account and guest answers now pass through a shared safety classifier before
+retrieval and before any answer text is shown. Configure the paid
+`OPENROUTER_SAFETY_MODEL=nvidia/nemotron-3.5-content-safety` endpoint in the
+backend `.env`; restart the backend after changing it. ZDR remains enforced.
+Classifier outages pause the answer with a retry message. Full output buffering
+increases time to first answer text. No re-embedding or migration is required.
+See [safety configuration, behavior, and staging evaluation](docs/safety.md).

@@ -16,7 +16,7 @@ class Settings:
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     chat_model: str = "nvidia/nemotron-3-nano-30b-a3b:free"
     answer_review_model: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
-    safety_model: str = "nvidia/nemotron-3.5-content-safety:free"
+    safety_model: str = "nvidia/nemotron-3.5-content-safety"
     embedding_model: str = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
     retrieval_k: int = 6
     retrieval_fetch_k: int = 16
@@ -68,7 +68,7 @@ class Settings:
                 "OPENROUTER_REVIEW_MODEL",
                 "nvidia/nemotron-3-ultra-550b-a55b:free",
             ),
-            safety_model=os.getenv("OPENROUTER_SAFETY_MODEL", "nvidia/nemotron-3.5-content-safety:free"),
+            safety_model=os.getenv("OPENROUTER_SAFETY_MODEL", "nvidia/nemotron-3.5-content-safety"),
             embedding_model=os.getenv("OPENROUTER_EMBEDDING_MODEL", "nvidia/llama-nemotron-embed-vl-1b-v2:free"),
             retrieval_k=int(os.getenv("RETRIEVAL_K", "6")),
             retrieval_fetch_k=int(os.getenv("RETRIEVAL_FETCH_K", "16")),

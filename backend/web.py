@@ -5,7 +5,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from backend.ai.openrouter import create_chat_model, create_embeddings, create_review_model
+from backend.ai.openrouter import create_chat_model, create_embeddings, create_review_model, create_safety_model
 from backend.api.conversations import conversations_api
 from backend.api.guests import guest_api
 from backend.auth import ClerkAuthenticator
@@ -16,6 +16,7 @@ from backend.repositories.conversations import ConversationRepository
 from backend.services.conversation_memory import ConversationMemoryService
 from backend.services.guest_access import GuestAccessService
 from backend.services.rag import MedicalQuestionAnswering
+from backend.services.safety import SafetyChecker, SafetyCheckedMedicalQA
 from backend.vector_store import open_vector_store
 
 
@@ -53,6 +54,7 @@ def create_app(
     *,
     medical_qa=None,
     authenticator=None,
+    safety_checker=None,
 ) -> Flask:
     settings = settings or Settings.from_env()
     app = Flask(__name__)
@@ -76,6 +78,11 @@ def create_app(
     migrate.init_app(app, db)
 
     medical_qa = medical_qa or LazyMedicalQuestionAnswering(settings)
+    safety_checker = safety_checker or SafetyChecker(
+        create_safety_model(settings), history_limit=settings.history_message_limit
+    )
+    app.extensions["safety_checker"] = safety_checker
+    medical_qa = SafetyCheckedMedicalQA(medical_qa, safety_checker)
 
     app.extensions["authenticator"] = authenticator or ClerkAuthenticator(settings)
     app.extensions["conversation_memory"] = ConversationMemoryService(

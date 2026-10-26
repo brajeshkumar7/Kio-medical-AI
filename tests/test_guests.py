@@ -37,7 +37,7 @@ class FakeMedicalQA:
 
 
 @pytest.fixture()
-def app(tmp_path):
+def app(tmp_path, safety_checker):
     qa = FakeMedicalQA()
     settings = Settings(
         pinecone_api_key="test",
@@ -46,7 +46,7 @@ def app(tmp_path):
         clerk_issuer_url="https://example.clerk.accounts.dev",
         guest_ip_hash_secret="test-only-secret",
     )
-    application = create_app(settings, medical_qa=qa, authenticator=FakeAuthenticator())
+    application = create_app(settings, medical_qa=qa, authenticator=FakeAuthenticator(), safety_checker=safety_checker)
     application.config.update(TESTING=True)
     application.extensions["fake_qa"] = qa
     with application.app_context():
@@ -224,4 +224,39 @@ def test_aborted_generation_consumes_question(client):
     assert response.status_code == 200
     assert b'"type": "start"' in next(response.response)
     response.close()
+    assert client.get("/api/guest/session", headers=guest_headers(token)).get_json()["remaining"] == 2
+
+
+@pytest.mark.parametrize("stage", ["input", "output"])
+def test_guest_safety_failure_refunds_and_removes_message(client, safety_checker, stage):
+    safety_checker.fail_stage = stage
+    token = new_guest(client)
+    conversation = new_conversation(client, token)
+    response = ask(client, token, conversation)
+    if stage == "input":
+        assert response.status_code == 503
+        assert response.get_json()["code"] == "SAFETY_CHECK_UNAVAILABLE"
+    else:
+        assert response.status_code == 200
+        events = [__import__("json").loads(line) for line in response.text.splitlines()]
+        assert [e["type"] for e in events] == ["start", "error"]
+        assert events[-1]["code"] == "SAFETY_CHECK_UNAVAILABLE"
+    assert client.get("/api/guest/session", headers=guest_headers(token)).get_json()["remaining"] == 3
+    detail = client.get(f"/api/guest/conversations/{conversation}", headers=guest_headers(token)).get_json()["conversation"]
+    assert detail["messages"] == []
+    assert detail["title"] == "New conversation"
+
+
+@pytest.mark.parametrize("stage", ["input", "output"])
+def test_guest_safety_redirection_is_saved_and_consumes_one_question(app, client, safety_checker, stage):
+    from backend.services.safety import SAFE_REDIRECTION
+    safety_checker.input_safe = stage != "input"
+    safety_checker.output_safe = stage != "output"
+    token = new_guest(client)
+    conversation = new_conversation(client, token)
+    response = ask(client, token, conversation)
+    events = [__import__("json").loads(line) for line in response.text.splitlines()]
+    assert "".join(e.get("content", "") for e in events) == SAFE_REDIRECTION
+    assert events[-1]["assistantMessage"]["content"] == SAFE_REDIRECTION
+    assert events[-1]["assistantMessage"]["metadata"]["sources"] == []
     assert client.get("/api/guest/session", headers=guest_headers(token)).get_json()["remaining"] == 2

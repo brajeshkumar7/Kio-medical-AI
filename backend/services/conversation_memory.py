@@ -72,12 +72,12 @@ class ConversationMemoryService:
             raise ConversationNotFoundError
 
         history = [(message.role, message.content) for message in conversation.messages[-self.history_limit :]]
+        answer_result = self.medical_qa.answer(content, history)
         if not conversation.messages:
             conversation.title = _conversation_title(content)
         user_message = self.repository.add_message(conversation, "user", content)
         db.session.commit()
 
-        answer_result = self.medical_qa.answer(content, history)
         answer = answer_result if isinstance(answer_result, str) else answer_result.content
         metadata = (
             {}
@@ -106,15 +106,12 @@ class ConversationMemoryService:
             raise ConversationNotFoundError
 
         history = [(message.role, message.content) for message in conversation.messages[-self.history_limit :]]
-        if guest:
-            answer_stream = self.medical_qa.stream_answer(content, history)
+        answer_stream = self.medical_qa.stream_answer(content, history)
         if not conversation.messages:
             conversation.title = _conversation_title(content)
         user_message = self.repository.add_message(conversation, "user", content)
         db.session.commit()
 
-        if not guest:
-            answer_stream = self.medical_qa.stream_answer(content, history)
         return PendingChatStream(
             conversation=conversation,
             user_message=user_message,
