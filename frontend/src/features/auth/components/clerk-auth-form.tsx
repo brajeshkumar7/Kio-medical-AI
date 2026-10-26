@@ -46,10 +46,14 @@ export default function ClerkAuthForm({
     );
   }
 
+  // Keep the root form's steps in the hash so it cannot capture /sign-up.
+  const signInRouting = onHomePage
+    ? { routing: "hash" as const }
+    : { path: "/sign-in", routing: "path" as const };
+
   return mode === "sign-in" ? (
     <SignIn
-      path={onHomePage ? "/" : "/sign-in"}
-      routing="path"
+      {...signInRouting}
       signUpUrl="/sign-up"
       forceRedirectUrl="/console"
       appearance={appearance}

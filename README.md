@@ -124,3 +124,22 @@ backend `.env`; restart the backend after changing it. ZDR remains enforced.
 Classifier outages pause the answer with a retry message. Full output buffering
 increases time to first answer text. No re-embedding or migration is required.
 See [safety configuration, behavior, and staging evaluation](docs/safety.md).
+
+## Repository organization and quality checks
+
+The supported Python package is `backend/`; the previous root `src/` is archived
+intact under `legacy/src/` and excluded from production packaging. The existing
+Next.js frontend remains under `frontend/`. Root startup, indexing, migration
+and maintenance commands are preserved.
+
+Project metadata and quality configuration live in `pyproject.toml`. Runtime and
+development locks live under `requirements/`; `pip install -r requirements.txt`
+remains supported. No database revision or re-embedding is needed for the refactor.
+
+- [Architecture and module ownership](docs/architecture.md)
+- [Development, tests and maintenance](docs/development.md)
+- [Deployment and rollback](docs/deployment.md)
+- [Dependency installation and lock regeneration](requirements/README.md)
+
+CI validates Python 3.11 and Node 24, including a disposable PostgreSQL migration
+test. It never runs live provider evaluation, document embedding or index deletion.

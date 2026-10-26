@@ -1,4 +1,4 @@
-﻿from backend.config import Settings
+from backend.config import Settings
 from backend.web import create_app
 
 app = create_app()

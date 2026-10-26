@@ -7,7 +7,6 @@ from flask import current_app, g, jsonify, request
 
 from backend.config import Settings
 
-
 F = TypeVar("F", bound=Callable[..., Any])
 
 

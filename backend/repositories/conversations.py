@@ -31,7 +31,9 @@ class ConversationRepository:
         )
         return list(db.session.scalars(statement))
 
-    def get_owned(self, conversation_id: str, user_id: str, *, lock: bool = False) -> Conversation | None:
+    def get_owned(
+        self, conversation_id: str, user_id: str, *, lock: bool = False
+    ) -> Conversation | None:
         statement = select(Conversation).where(
             Conversation.id == conversation_id, Conversation.user_id == user_id
         )

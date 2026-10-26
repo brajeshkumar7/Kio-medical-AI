@@ -1,0 +1,5 @@
+{
+  "backend/ai/prompts.py": "c80a5a38b8b24e066c06eb1c1ad7f37e7e20dee32402de130cb0b80ef761f70b",
+  "migrations\\versions\\20260801_0001_conversation_memory.py": "9dfc7a78cfbd875eb0c88b43150251f4b27c3171bdd80512ed8e1551ab35c054",
+  "migrations\\versions\\20261013_0002_guest_chat.py": "0d07c7c7f3cf82cc0265841cee7c36e8d5ca18a5cf00e1ad843bf548c1d27b6f"
+}

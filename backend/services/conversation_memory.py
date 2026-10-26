@@ -1,10 +1,11 @@
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
-import re
 
 from backend.extensions import db
 from backend.models import Conversation, Message
 from backend.repositories.conversations import ConversationRepository
+from backend.services.contracts import MedicalQA
 
 
 class ConversationNotFoundError(Exception):
@@ -27,7 +28,9 @@ class PendingChatStream:
 
 
 class ConversationMemoryService:
-    def __init__(self, repository: ConversationRepository, medical_qa, history_limit: int):
+    def __init__(
+        self, repository: ConversationRepository, medical_qa: MedicalQA, history_limit: int
+    ):
         self.repository = repository
         self.medical_qa = medical_qa
         self.history_limit = history_limit
@@ -44,24 +47,30 @@ class ConversationMemoryService:
         owner_id = self._owner_id(actor_id, guest)
         return (
             self.repository.list_for_guest(owner_id)
-            if guest else self.repository.list_for_user(owner_id)
+            if guest
+            else self.repository.list_for_user(owner_id)
         )
 
     def create_conversation(self, actor_id: str, *, guest: bool = False) -> Conversation:
         owner_id = self._owner_id(actor_id, guest)
         return (
             self.repository.create_for_guest(owner_id)
-            if guest else self.repository.create(owner_id)
+            if guest
+            else self.repository.create(owner_id)
         )
 
-    def get_conversation(self, actor_id: str, conversation_id: str, *, guest: bool = False) -> Conversation:
+    def get_conversation(
+        self, actor_id: str, conversation_id: str, *, guest: bool = False
+    ) -> Conversation:
         owner_id = self._owner_id(actor_id, guest)
         conversation = self._get_owned(conversation_id, owner_id, guest)
         if conversation is None:
             raise ConversationNotFoundError
         return conversation
 
-    def delete_conversation(self, actor_id: str, conversation_id: str, *, guest: bool = False) -> None:
+    def delete_conversation(
+        self, actor_id: str, conversation_id: str, *, guest: bool = False
+    ) -> None:
         conversation = self.get_conversation(actor_id, conversation_id, guest=guest)
         self.repository.delete(conversation)
 
@@ -71,7 +80,10 @@ class ConversationMemoryService:
         if conversation is None:
             raise ConversationNotFoundError
 
-        history = [(message.role, message.content) for message in conversation.messages[-self.history_limit :]]
+        history = [
+            (message.role, message.content)
+            for message in conversation.messages[-self.history_limit :]
+        ]
         answer_result = self.medical_qa.answer(content, history)
         if not conversation.messages:
             conversation.title = _conversation_title(content)
@@ -105,7 +117,10 @@ class ConversationMemoryService:
         if conversation is None:
             raise ConversationNotFoundError
 
-        history = [(message.role, message.content) for message in conversation.messages[-self.history_limit :]]
+        history = [
+            (message.role, message.content)
+            for message in conversation.messages[-self.history_limit :]
+        ]
         answer_stream = self.medical_qa.stream_answer(content, history)
         if not conversation.messages:
             conversation.title = _conversation_title(content)
@@ -142,7 +157,9 @@ class ConversationMemoryService:
         db.session.commit()
         return ChatResult(conversation, user_message, assistant_message)
 
-    def discard_failed_guest_message(self, guest_id: str, conversation_id: str, message_id: str) -> None:
+    def discard_failed_guest_message(
+        self, guest_id: str, conversation_id: str, message_id: str
+    ) -> None:
         conversation = self.repository.get_guest_owned(conversation_id, guest_id, lock=True)
         if conversation is None:
             return

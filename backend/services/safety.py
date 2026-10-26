@@ -1,13 +1,12 @@
 """Fail-closed moderation, separate from retrieval and medical evidence review."""
 
-from collections.abc import Iterator
-from dataclasses import dataclass
 import json
 import logging
+from collections.abc import Iterator
+from dataclasses import dataclass
 from time import monotonic
 
 from langchain_core.messages import AIMessage, HumanMessage
-
 
 logger = logging.getLogger(__name__)
 SAFETY_ERROR_CODE = "SAFETY_CHECK_UNAVAILABLE"
@@ -36,7 +35,11 @@ def parse_decision(text: str, *, output: bool) -> SafetyDecision:
         if not line.strip():
             continue
         key, separator, value = line.strip().partition(":")
-        if not separator or key not in {"User Safety", "Response Safety", "Safety Categories"} or key in fields:
+        if (
+            not separator
+            or key not in {"User Safety", "Response Safety", "Safety Categories"}
+            or key in fields
+        ):
             raise SafetyCheckUnavailable(SAFETY_RETRY_MESSAGE)
         fields[key] = value.strip()
     required = ["User Safety", "Response Safety"] if output else ["User Safety"]
@@ -44,16 +47,22 @@ def parse_decision(text: str, *, output: bool) -> SafetyDecision:
         raise SafetyCheckUnavailable(SAFETY_RETRY_MESSAGE)
     if "Response Safety" in fields and fields["Response Safety"] not in {"safe", "unsafe"}:
         raise SafetyCheckUnavailable(SAFETY_RETRY_MESSAGE)
-    categories = tuple(part.strip() for part in fields.get("Safety Categories", "").split(",") if part.strip())
+    categories = tuple(
+        part.strip() for part in fields.get("Safety Categories", "").split(",") if part.strip()
+    )
     if categories and all(part.casefold() in {"none", "n/a"} for part in categories):
         categories = ()
-    if categories and all(fields.get(key, "safe") == "safe" for key in ("User Safety", "Response Safety")):
+    if categories and all(
+        fields.get(key, "safe") == "safe" for key in ("User Safety", "Response Safety")
+    ):
         raise SafetyCheckUnavailable(SAFETY_RETRY_MESSAGE)
     if not output and fields.get("Response Safety") == "unsafe":
         raise SafetyCheckUnavailable(SAFETY_RETRY_MESSAGE)
     return SafetyDecision(
         user_safe=fields["User Safety"] == "safe",
-        response_safe=(fields["Response Safety"] == "safe") if "Response Safety" in fields else None,
+        response_safe=(fields["Response Safety"] == "safe")
+        if "Response Safety" in fields
+        else None,
         categories=categories,
     )
 
@@ -74,8 +83,10 @@ class SafetyChecker:
         started = monotonic()
         # NVIDIA's native format uses a user prompt and an optional assistant response.
         # Serialize context as data rather than interpolating it into a system instruction.
-        context = list(history or [])[-self.history_limit:] if self.history_limit > 0 else []
-        prompt = json.dumps({"conversation_context": context, "latest_user_message": question}, ensure_ascii=False)
+        context = list(history or [])[-self.history_limit :] if self.history_limit > 0 else []
+        prompt = json.dumps(
+            {"conversation_context": context, "latest_user_message": question}, ensure_ascii=False
+        )
         messages = [HumanMessage(content=prompt)]
         if response is not None:
             messages.append(AIMessage(content=response))
@@ -88,13 +99,21 @@ class SafetyChecker:
             decision = parse_decision(result.content, output=response is not None)
         except Exception:
             # Provider exceptions can contain submitted text. Do not log them or chain them.
-            logger.warning("safety_check stage=%s outcome=unavailable model=%s duration_ms=%d", stage,
-                           getattr(self.model, "model_name", "injected"), (monotonic() - started) * 1000)
+            logger.warning(
+                "safety_check stage=%s outcome=unavailable model=%s duration_ms=%d",
+                stage,
+                getattr(self.model, "model_name", "injected"),
+                (monotonic() - started) * 1000,
+            )
             raise SafetyCheckUnavailable(SAFETY_RETRY_MESSAGE) from None
         allowed = decision.user_safe and (response is None or decision.response_safe is True)
-        logger.info("safety_check stage=%s outcome=%s model=%s duration_ms=%d", stage,
-                    "allowed" if allowed else "blocked", getattr(self.model, "model_name", "injected"),
-                    (monotonic() - started) * 1000)
+        logger.info(
+            "safety_check stage=%s outcome=%s model=%s duration_ms=%d",
+            stage,
+            "allowed" if allowed else "blocked",
+            getattr(self.model, "model_name", "injected"),
+            (monotonic() - started) * 1000,
+        )
         return decision
 
 

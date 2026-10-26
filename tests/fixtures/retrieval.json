@@ -1,0 +1,73 @@
+{
+  "documents": [
+    {
+      "text": "Fever is an elevated body temperature.",
+      "metadata": {
+        "id": "a",
+        "source": "Data/Medical_book.pdf",
+        "page": 0
+      }
+    },
+    {
+      "text": "A cough helps clear the airways.",
+      "metadata": {
+        "id": "b",
+        "source": "Data/Medical_book.pdf",
+        "page": 1
+      }
+    },
+    {
+      "text": "A cough  helps clear the airways.",
+      "metadata": {
+        "id": "b-copy",
+        "source": "Data/Medical_book.pdf",
+        "page": 1
+      }
+    },
+    {
+      "text": "Fever can accompany an infection.",
+      "metadata": {
+        "id": "c",
+        "source": "Data/guide.pdf",
+        "page": 0
+      }
+    },
+    {
+      "text": "Sleep supports rest.",
+      "metadata": {
+        "id": "d",
+        "source": "Data/guide.pdf",
+        "page": 2
+      }
+    }
+  ],
+  "lexical_ids": [
+    "a",
+    "c",
+    "b",
+    "d"
+  ],
+  "fused_ids": [
+    "c",
+    "a",
+    "d",
+    "b"
+  ],
+  "unique_ids": [
+    "b",
+    "c"
+  ],
+  "sources": [
+    {
+      "id": 1,
+      "title": "Gale Encyclopedia of Medicine, 2nd ed.",
+      "page": 2
+    },
+    {
+      "id": 2,
+      "title": "guide",
+      "page": 1
+    }
+  ],
+  "context": "[1] Gale Encyclopedia of Medicine, 2nd ed., page 2\nA cough helps clear the airways.\n\n[2] guide, page 1\nFever can accompany an infection."
+}

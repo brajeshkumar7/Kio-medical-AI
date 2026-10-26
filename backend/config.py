@@ -1,5 +1,5 @@
-﻿from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -59,7 +59,10 @@ class Settings:
             database_url=_normalize_database_url(os.getenv("DATABASE_URL", "")),
             clerk_issuer_url=os.getenv("CLERK_ISSUER_URL", "").rstrip("/"),
             clerk_authorized_parties=_csv_values(
-                os.getenv("CLERK_AUTHORIZED_PARTIES", os.getenv("FRONTEND_ORIGIN", "http://localhost:3000"))
+                os.getenv(
+                    "CLERK_AUTHORIZED_PARTIES",
+                    os.getenv("FRONTEND_ORIGIN", "http://localhost:3000"),
+                )
             ),
             pinecone_index_name=os.getenv("PINECONE_INDEX_NAME", "medicalbot"),
             openrouter_base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
@@ -69,7 +72,9 @@ class Settings:
                 "nvidia/nemotron-3-ultra-550b-a55b:free",
             ),
             safety_model=os.getenv("OPENROUTER_SAFETY_MODEL", "nvidia/nemotron-3.5-content-safety"),
-            embedding_model=os.getenv("OPENROUTER_EMBEDDING_MODEL", "nvidia/llama-nemotron-embed-vl-1b-v2:free"),
+            embedding_model=os.getenv(
+                "OPENROUTER_EMBEDDING_MODEL", "nvidia/llama-nemotron-embed-vl-1b-v2:free"
+            ),
             retrieval_k=int(os.getenv("RETRIEVAL_K", "6")),
             retrieval_fetch_k=int(os.getenv("RETRIEVAL_FETCH_K", "16")),
             retrieval_lambda_mult=float(os.getenv("RETRIEVAL_LAMBDA_MULT", "0.65")),

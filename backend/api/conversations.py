@@ -1,48 +1,15 @@
-import json
-from datetime import datetime
-
-from flask import Blueprint, Response, current_app, g, jsonify, request, stream_with_context
+from flask import Blueprint, current_app, g, jsonify, request, stream_with_context
 from openai import AuthenticationError
 
+from backend.api.errors import OPENROUTER_AUTH_ERROR
+from backend.api.serialization import conversation_json, message_json
+from backend.api.streaming import ndjson_response, stream_event
 from backend.auth import require_auth
-from backend.models import Conversation, Message
-from backend.services.conversation_memory import ConversationNotFoundError
 from backend.extensions import db
-from backend.services.safety import SafetyCheckUnavailable, SAFETY_ERROR_CODE, SAFETY_RETRY_MESSAGE
-
+from backend.services.conversation_memory import ConversationNotFoundError
+from backend.services.safety import SAFETY_ERROR_CODE, SAFETY_RETRY_MESSAGE, SafetyCheckUnavailable
 
 conversations_api = Blueprint("conversations", __name__, url_prefix="/api/conversations")
-_OPENROUTER_AUTH_ERROR = (
-    "OpenRouter rejected the API key. Update OPENROUTER_API_KEY in the backend .env "
-    "and restart the server."
-)
-
-
-def _iso(value: datetime) -> str:
-    return value.isoformat().replace("+00:00", "Z")
-
-
-def _message_json(message: Message) -> dict:
-    return {
-        "id": message.id,
-        "role": message.role,
-        "content": message.content,
-        "sequence": message.sequence,
-        "metadata": message.message_metadata,
-        "createdAt": _iso(message.created_at),
-    }
-
-
-def _conversation_json(conversation: Conversation, *, include_messages: bool = False) -> dict:
-    result = {
-        "id": conversation.id,
-        "title": conversation.title,
-        "createdAt": _iso(conversation.created_at),
-        "updatedAt": _iso(conversation.updated_at),
-    }
-    if include_messages:
-        result["messages"] = [_message_json(message) for message in conversation.messages]
-    return result
 
 
 def _service():
@@ -57,14 +24,14 @@ def _clerk_user_id() -> str:
 @require_auth
 def list_conversations():
     conversations = _service().list_conversations(_clerk_user_id())
-    return jsonify({"conversations": [_conversation_json(item) for item in conversations]})
+    return jsonify({"conversations": [conversation_json(item) for item in conversations]})
 
 
 @conversations_api.post("")
 @require_auth
 def create_conversation():
     conversation = _service().create_conversation(_clerk_user_id())
-    return jsonify({"conversation": _conversation_json(conversation, include_messages=True)}), 201
+    return jsonify({"conversation": conversation_json(conversation, include_messages=True)}), 201
 
 
 @conversations_api.get("/<conversation_id>")
@@ -74,7 +41,7 @@ def get_conversation(conversation_id: str):
         conversation = _service().get_conversation(_clerk_user_id(), conversation_id)
     except ConversationNotFoundError:
         return jsonify({"error": "Conversation not found"}), 404
-    return jsonify({"conversation": _conversation_json(conversation, include_messages=True)})
+    return jsonify({"conversation": conversation_json(conversation, include_messages=True)})
 
 
 @conversations_api.delete("/<conversation_id>")
@@ -106,16 +73,16 @@ def send_message(conversation_id: str):
         return jsonify({"error": SAFETY_RETRY_MESSAGE, "code": SAFETY_ERROR_CODE}), 503
     except AuthenticationError:
         current_app.logger.exception("OpenRouter authentication failed")
-        return jsonify({"error": _OPENROUTER_AUTH_ERROR}), 502
+        return jsonify({"error": OPENROUTER_AUTH_ERROR}), 502
     except Exception:
         current_app.logger.exception("Question answering failed")
         return jsonify({"error": "Unable to answer the question"}), 502
 
     return jsonify(
         {
-            "conversation": _conversation_json(result.conversation),
-            "userMessage": _message_json(result.user_message),
-            "assistantMessage": _message_json(result.assistant_message),
+            "conversation": conversation_json(result.conversation),
+            "userMessage": message_json(result.user_message),
+            "assistantMessage": message_json(result.assistant_message),
         }
     ), 201
 
@@ -140,18 +107,18 @@ def stream_message(conversation_id: str):
         return jsonify({"error": SAFETY_RETRY_MESSAGE, "code": SAFETY_ERROR_CODE}), 503
     except AuthenticationError:
         current_app.logger.exception("OpenRouter authentication failed")
-        return jsonify({"error": _OPENROUTER_AUTH_ERROR}), 502
+        return jsonify({"error": OPENROUTER_AUTH_ERROR}), 502
     except Exception:
         current_app.logger.exception("Question answering stream could not start")
         return jsonify({"error": "Unable to answer the question"}), 502
 
-    start_conversation = _conversation_json(pending.conversation)
-    start_user_message = _message_json(pending.user_message)
+    start_conversation = conversation_json(pending.conversation)
+    start_user_message = message_json(pending.user_message)
     sources = pending.metadata.get("sources", [])
 
     @stream_with_context
     def generate():
-        yield _stream_event(
+        yield stream_event(
             "start",
             conversation=start_conversation,
             userMessage=start_user_message,
@@ -161,7 +128,7 @@ def stream_message(conversation_id: str):
         try:
             for chunk in pending.chunks:
                 chunks.append(chunk)
-                yield _stream_event("delta", content=chunk)
+                yield stream_event("delta", content=chunk)
 
             answer = "".join(chunks).strip()
             if not answer:
@@ -173,29 +140,22 @@ def stream_message(conversation_id: str):
                 answer,
                 pending.metadata,
             )
-            yield _stream_event(
+            yield stream_event(
                 "complete",
-                conversation=_conversation_json(result.conversation),
+                conversation=conversation_json(result.conversation),
                 userMessage=start_user_message,
-                assistantMessage=_message_json(result.assistant_message),
+                assistantMessage=message_json(result.assistant_message),
             )
         except GeneratorExit:
             raise
         except SafetyCheckUnavailable:
             db.session.rollback()
-            yield _stream_event("error", error=SAFETY_RETRY_MESSAGE, code=SAFETY_ERROR_CODE)
+            yield stream_event("error", error=SAFETY_RETRY_MESSAGE, code=SAFETY_ERROR_CODE)
         except AuthenticationError:
             current_app.logger.exception("OpenRouter authentication failed during streaming")
-            yield _stream_event("error", error=_OPENROUTER_AUTH_ERROR)
+            yield stream_event("error", error=OPENROUTER_AUTH_ERROR)
         except Exception:
             current_app.logger.exception("Question answering stream failed")
-            yield _stream_event("error", error="Unable to answer the question")
+            yield stream_event("error", error="Unable to answer the question")
 
-    response = Response(generate(), content_type="application/x-ndjson; charset=utf-8")
-    response.headers["Cache-Control"] = "no-cache, no-transform"
-    response.headers["X-Accel-Buffering"] = "no"
-    return response
-
-
-def _stream_event(event_type: str, **payload) -> str:
-    return json.dumps({"type": event_type, **payload}, ensure_ascii=False) + "\n"
+    return ndjson_response(generate())

@@ -1,9 +1,11 @@
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+
 from backend.config import Settings
 
 
 def _headers(settings: Settings) -> dict[str, str]:
     return {"HTTP-Referer": settings.frontend_origin, "X-Title": "KIO Medical AI"}
+
 
 def create_embeddings(settings: Settings) -> OpenAIEmbeddings:
     return OpenAIEmbeddings(
@@ -16,6 +18,7 @@ def create_embeddings(settings: Settings) -> OpenAIEmbeddings:
         timeout=45,
         max_retries=0,
     )
+
 
 def create_chat_model(settings: Settings) -> ChatOpenAI:
     return ChatOpenAI(

@@ -1,18 +1,24 @@
 """Guest identity, transfer, retention, and atomic daily allowances."""
 
-from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
 import hashlib
 import hmac
 import secrets
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from backend.extensions import db
-from backend.models import Conversation, GuestDailyUsage, GuestIpDailyUsage, GuestSession, User, utc_now
-
+from backend.models import (
+    Conversation,
+    GuestDailyUsage,
+    GuestIpDailyUsage,
+    GuestSession,
+    User,
+    utc_now,
+)
 
 GUEST_DAILY_LIMIT = 3
 NETWORK_DAILY_LIMIT = 60
@@ -90,20 +96,28 @@ class GuestAccessService:
     def status(self, session_id: str, ip: str) -> dict:
         now = utc_now()
         day = now.date()
-        guest_used = db.session.scalar(
-            select(GuestDailyUsage.used).where(
-                GuestDailyUsage.guest_session_id == session_id,
-                GuestDailyUsage.day == day,
+        guest_used = (
+            db.session.scalar(
+                select(GuestDailyUsage.used).where(
+                    GuestDailyUsage.guest_session_id == session_id,
+                    GuestDailyUsage.day == day,
+                )
             )
-        ) or 0
-        network_used = db.session.scalar(
-            select(GuestIpDailyUsage.used).where(
-                GuestIpDailyUsage.ip_hash == self._ip_hash(ip),
-                GuestIpDailyUsage.day == day,
+            or 0
+        )
+        network_used = (
+            db.session.scalar(
+                select(GuestIpDailyUsage.used).where(
+                    GuestIpDailyUsage.ip_hash == self._ip_hash(ip),
+                    GuestIpDailyUsage.day == day,
+                )
             )
-        ) or 0
+            or 0
+        )
         return {
-            "remaining": max(0, min(GUEST_DAILY_LIMIT - guest_used, NETWORK_DAILY_LIMIT - network_used)),
+            "remaining": max(
+                0, min(GUEST_DAILY_LIMIT - guest_used, NETWORK_DAILY_LIMIT - network_used)
+            ),
             "limit": GUEST_DAILY_LIMIT,
             "resetAt": _next_utc_midnight(now).isoformat().replace("+00:00", "Z"),
         }
@@ -166,8 +180,10 @@ class GuestAccessService:
     def claim(self, token: str, clerk_user_id: str) -> int:
         session = self.authenticate(token, allow_claimed=True)
         session = db.session.scalar(
-            select(GuestSession).where(GuestSession.id == session.id)
-            .with_for_update().execution_options(populate_existing=True)
+            select(GuestSession)
+            .where(GuestSession.id == session.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if session.claimed_at is not None:
             user = db.session.get(User, session.claimed_user_id)
@@ -180,9 +196,14 @@ class GuestAccessService:
             user = User(clerk_user_id=clerk_user_id)
             db.session.add(user)
             db.session.flush()
-        count = db.session.scalar(
-            select(func.count(Conversation.id)).where(Conversation.guest_session_id == session.id)
-        ) or 0
+        count = (
+            db.session.scalar(
+                select(func.count(Conversation.id)).where(
+                    Conversation.guest_session_id == session.id
+                )
+            )
+            or 0
+        )
         db.session.execute(
             update(Conversation)
             .where(Conversation.guest_session_id == session.id)
@@ -196,7 +217,9 @@ class GuestAccessService:
     def purge_expired(self) -> int:
         now = utc_now()
         expired = db.session.scalars(
-            select(GuestSession).where(GuestSession.expires_at <= now).with_for_update(skip_locked=True)
+            select(GuestSession)
+            .where(GuestSession.expires_at <= now)
+            .with_for_update(skip_locked=True)
         ).all()
         if expired:
             db.session.execute(
@@ -206,6 +229,8 @@ class GuestAccessService:
             )
         for session in expired:
             db.session.delete(session)
-        db.session.execute(delete(GuestIpDailyUsage).where(GuestIpDailyUsage.day < now.date() - timedelta(days=30)))
+        db.session.execute(
+            delete(GuestIpDailyUsage).where(GuestIpDailyUsage.day < now.date() - timedelta(days=30))
+        )
         db.session.commit()
         return len(expired)

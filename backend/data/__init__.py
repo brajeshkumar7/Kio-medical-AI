@@ -1,1 +1,1 @@
-﻿"""Document ingestion utilities."""
+"""Document ingestion utilities."""

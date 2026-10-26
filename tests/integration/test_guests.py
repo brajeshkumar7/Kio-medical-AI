@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -8,7 +8,7 @@ from sqlalchemy import select
 from backend.auth import AuthenticatedUser
 from backend.config import Settings
 from backend.extensions import db
-from backend.models import Conversation, GuestDailyUsage, GuestIpDailyUsage, GuestSession
+from backend.models import Conversation, GuestDailyUsage, GuestIpDailyUsage
 from backend.services.guest_access import GuestQuotaExceeded
 from backend.web import create_app
 
@@ -46,7 +46,9 @@ def app(tmp_path, safety_checker):
         clerk_issuer_url="https://example.clerk.accounts.dev",
         guest_ip_hash_secret="test-only-secret",
     )
-    application = create_app(settings, medical_qa=qa, authenticator=FakeAuthenticator(), safety_checker=safety_checker)
+    application = create_app(
+        settings, medical_qa=qa, authenticator=FakeAuthenticator(), safety_checker=safety_checker
+    )
     application.config.update(TESTING=True)
     application.extensions["fake_qa"] = qa
     with application.app_context():
@@ -94,8 +96,18 @@ def test_guest_allowance_history_and_ownership(client):
     token = new_guest(client)
     other_token = new_guest(client)
     conversation = new_conversation(client, token)
-    assert client.get(f"/api/guest/conversations/{conversation}", headers=guest_headers(other_token)).status_code == 404
-    assert client.get(f"/api/conversations/{conversation}", headers={"Authorization": "Bearer user-one"}).status_code == 404
+    assert (
+        client.get(
+            f"/api/guest/conversations/{conversation}", headers=guest_headers(other_token)
+        ).status_code
+        == 404
+    )
+    assert (
+        client.get(
+            f"/api/conversations/{conversation}", headers={"Authorization": "Bearer user-one"}
+        ).status_code
+        == 404
+    )
 
     for remaining in (2, 1, 0):
         response = ask(client, token, conversation)
@@ -107,7 +119,9 @@ def test_guest_allowance_history_and_ownership(client):
     assert fourth.status_code == 429
     assert fourth.get_json()["code"] == "GUEST_LIMIT_REACHED"
     assert fourth.get_json()["resetAt"].endswith("T00:00:00Z")
-    detail = client.get(f"/api/guest/conversations/{conversation}", headers=guest_headers(token)).get_json()
+    detail = client.get(
+        f"/api/guest/conversations/{conversation}", headers=guest_headers(token)
+    ).get_json()
     assert len(detail["conversation"]["messages"]) == 6
 
 
@@ -140,8 +154,12 @@ def test_provider_failures_refund_and_remove_unanswered_message(app, client):
     response = ask(client, token, conversation)
     assert response.status_code == 200
     assert b'"type": "error"' in response.data
-    assert client.get("/api/guest/session", headers=guest_headers(token)).get_json()["remaining"] == 3
-    detail = client.get(f"/api/guest/conversations/{conversation}", headers=guest_headers(token)).get_json()
+    assert (
+        client.get("/api/guest/session", headers=guest_headers(token)).get_json()["remaining"] == 3
+    )
+    detail = client.get(
+        f"/api/guest/conversations/{conversation}", headers=guest_headers(token)
+    ).get_json()
     assert detail["conversation"]["messages"] == []
     qa.fail_during_stream = False
     assert b'"type": "complete"' in ask(client, token, conversation).data
@@ -156,10 +174,31 @@ def test_claim_once_and_expired_session_cleanup(app, client):
     assert first.status_code == 200
     assert first.get_json()["transferred"] == 1
     assert client.post("/api/guest/claim", headers=claim_headers).get_json()["transferred"] == 0
-    assert client.post("/api/guest/claim", headers={"Authorization": "Bearer user-two", "X-Kio-Guest-Token": token}).status_code == 409
-    assert client.get(f"/api/guest/conversations/{conversation}", headers=guest_headers(token)).status_code == 401
-    assert client.get(f"/api/conversations/{conversation}", headers={"Authorization": "Bearer user-one"}).status_code == 200
-    assert client.get(f"/api/conversations/{conversation}", headers={"Authorization": "Bearer user-two"}).status_code == 404
+    assert (
+        client.post(
+            "/api/guest/claim",
+            headers={"Authorization": "Bearer user-two", "X-Kio-Guest-Token": token},
+        ).status_code
+        == 409
+    )
+    assert (
+        client.get(
+            f"/api/guest/conversations/{conversation}", headers=guest_headers(token)
+        ).status_code
+        == 401
+    )
+    assert (
+        client.get(
+            f"/api/conversations/{conversation}", headers={"Authorization": "Bearer user-one"}
+        ).status_code
+        == 200
+    )
+    assert (
+        client.get(
+            f"/api/conversations/{conversation}", headers={"Authorization": "Bearer user-two"}
+        ).status_code
+        == 404
+    )
 
     expired_token = new_guest(client)
     expired_conversation = new_conversation(client, expired_token)
@@ -184,7 +223,9 @@ def test_midnight_utc_reset(app, monkeypatch):
         for _ in range(3):
             access.reserve(session.id, "198.51.100.8")
         assert access.status(session.id, "198.51.100.8") == {
-            "remaining": 0, "limit": 3, "resetAt": "2026-10-14T00:00:00Z"
+            "remaining": 0,
+            "limit": 3,
+            "resetAt": "2026-10-14T00:00:00Z",
         }
         monkeypatch.setattr(module, "utc_now", lambda: before + timedelta(seconds=1))
         assert access.status(session.id, "198.51.100.8")["remaining"] == 3
@@ -208,7 +249,9 @@ def test_concurrent_reservations_never_exceed_allowance(app):
     assert results.count(True) == 3
     assert results.count(False) == 3
     with app.app_context():
-        used = db.session.scalar(select(GuestDailyUsage.used).where(GuestDailyUsage.guest_session_id == session_id))
+        used = db.session.scalar(
+            select(GuestDailyUsage.used).where(GuestDailyUsage.guest_session_id == session_id)
+        )
         assert used == 3
 
 
@@ -224,7 +267,9 @@ def test_aborted_generation_consumes_question(client):
     assert response.status_code == 200
     assert b'"type": "start"' in next(response.response)
     response.close()
-    assert client.get("/api/guest/session", headers=guest_headers(token)).get_json()["remaining"] == 2
+    assert (
+        client.get("/api/guest/session", headers=guest_headers(token)).get_json()["remaining"] == 2
+    )
 
 
 @pytest.mark.parametrize("stage", ["input", "output"])
@@ -241,15 +286,22 @@ def test_guest_safety_failure_refunds_and_removes_message(client, safety_checker
         events = [__import__("json").loads(line) for line in response.text.splitlines()]
         assert [e["type"] for e in events] == ["start", "error"]
         assert events[-1]["code"] == "SAFETY_CHECK_UNAVAILABLE"
-    assert client.get("/api/guest/session", headers=guest_headers(token)).get_json()["remaining"] == 3
-    detail = client.get(f"/api/guest/conversations/{conversation}", headers=guest_headers(token)).get_json()["conversation"]
+    assert (
+        client.get("/api/guest/session", headers=guest_headers(token)).get_json()["remaining"] == 3
+    )
+    detail = client.get(
+        f"/api/guest/conversations/{conversation}", headers=guest_headers(token)
+    ).get_json()["conversation"]
     assert detail["messages"] == []
     assert detail["title"] == "New conversation"
 
 
 @pytest.mark.parametrize("stage", ["input", "output"])
-def test_guest_safety_redirection_is_saved_and_consumes_one_question(app, client, safety_checker, stage):
+def test_guest_safety_redirection_is_saved_and_consumes_one_question(
+    app, client, safety_checker, stage
+):
     from backend.services.safety import SAFE_REDIRECTION
+
     safety_checker.input_safe = stage != "input"
     safety_checker.output_safe = stage != "output"
     token = new_guest(client)
@@ -259,4 +311,6 @@ def test_guest_safety_redirection_is_saved_and_consumes_one_question(app, client
     assert "".join(e.get("content", "") for e in events) == SAFE_REDIRECTION
     assert events[-1]["assistantMessage"]["content"] == SAFE_REDIRECTION
     assert events[-1]["assistantMessage"]["metadata"]["sources"] == []
-    assert client.get("/api/guest/session", headers=guest_headers(token)).get_json()["remaining"] == 2
+    assert (
+        client.get("/api/guest/session", headers=guest_headers(token)).get_json()["remaining"] == 2
+    )

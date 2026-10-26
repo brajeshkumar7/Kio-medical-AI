@@ -1,15 +1,16 @@
-﻿from pathlib import Path
 import gzip
 import hashlib
 import json
+from pathlib import Path
 
 from langchain_community.document_loaders import DirectoryLoader, PyPDFLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 from backend.config import Settings
 
-
 _CACHE_VERSION = 1
+
 
 def load_documents(data_dir: str | Path):
     data_dir = Path(data_dir)
@@ -20,8 +21,11 @@ def load_documents(data_dir: str | Path):
         raise ValueError(f"No PDF files found in {data_dir}")
     return documents
 
+
 def split_documents(documents, settings: Settings):
-    splitter = RecursiveCharacterTextSplitter(chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap)
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap
+    )
     chunks = splitter.split_documents(documents)
     for index, chunk in enumerate(chunks):
         chunk.metadata["chunk_index"] = index
@@ -36,8 +40,7 @@ def load_cached_chunks(data_dir: str | Path, settings: Settings) -> list[Documen
             with gzip.open(cache_path, "rt", encoding="utf-8") as cache_file:
                 records = json.load(cache_file)
             return [
-                Document(page_content=item["text"], metadata=item["metadata"])
-                for item in records
+                Document(page_content=item["text"], metadata=item["metadata"]) for item in records
             ]
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
             cache_path.unlink(missing_ok=True)

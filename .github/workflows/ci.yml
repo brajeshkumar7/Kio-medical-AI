@@ -1,0 +1,80 @@
+name: Validate v1
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kio_ci_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      TEST_POSTGRES_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/kio_ci_test
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/kio_ci_test
+      PINECONE_API_KEY: test-only
+      OPENROUTER_API_KEY: test-only
+      CLERK_ISSUER_URL: https://example.clerk.accounts.dev
+      GUEST_IP_HASH_SECRET: test-only-ci-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+      - run: pip install -r requirements/development.txt -e .
+      - run: python -m ruff check .
+      - run: python -m ruff format --check .
+      - run: python -m pytest
+      - run: python -m build
+      - name: Validate package contents
+        run: python -m pytest tests/unit/test_distribution.py
+        env:
+          BUILT_WHEEL: dist/medical_chatbot_genai-0.1.0-py3-none-any.whl
+      - name: Verify clean runtime install and existing commands
+        run: |
+          python -m venv /tmp/kio-runtime
+          /tmp/kio-runtime/bin/pip install -r requirements.txt
+          /tmp/kio-runtime/bin/gunicorn app:app --check-config
+          /tmp/kio-runtime/bin/python store_index.py --help
+          /tmp/kio-runtime/bin/python -m backend.jobs.evaluate_safety --help
+          /tmp/kio-runtime/bin/flask --app app db upgrade
+          env -u OPENROUTER_API_KEY -u PINECONE_API_KEY -u CLERK_ISSUER_URL -u GUEST_IP_HASH_SECRET /tmp/kio-runtime/bin/python -m backend.jobs.purge_guests
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      # Synthetic build credentials; no real Clerk account is contacted.
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk
+      CLERK_SECRET_KEY: sk_test_not_a_real_secret
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

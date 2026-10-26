@@ -14,8 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-!/frontend/lib/
+# Ignore root Python build output without hiding frontend/src/lib source files.
+/lib/
 lib64/
 parts/
 sdist/
@@ -130,6 +130,8 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/

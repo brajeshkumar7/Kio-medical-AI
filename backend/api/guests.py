@@ -2,21 +2,17 @@
 
 from functools import wraps
 
-from flask import Blueprint, Response, current_app, g, jsonify, request, stream_with_context
+from flask import Blueprint, current_app, g, jsonify, request, stream_with_context
 from openai import AuthenticationError
 
-from backend.api.conversations import (
-    _OPENROUTER_AUTH_ERROR,
-    _conversation_json,
-    _message_json,
-    _stream_event,
-)
+from backend.api.errors import OPENROUTER_AUTH_ERROR
+from backend.api.serialization import conversation_json, message_json
+from backend.api.streaming import ndjson_response, stream_event
 from backend.auth import require_auth
 from backend.extensions import db
 from backend.services.conversation_memory import ConversationNotFoundError
 from backend.services.guest_access import GuestAccessError, GuestQuotaExceeded
-from backend.services.safety import SafetyCheckUnavailable, SAFETY_ERROR_CODE, SAFETY_RETRY_MESSAGE
-
+from backend.services.safety import SAFETY_ERROR_CODE, SAFETY_RETRY_MESSAGE, SafetyCheckUnavailable
 
 guest_api = Blueprint("guests", __name__, url_prefix="/api/guest")
 
@@ -37,12 +33,17 @@ def require_guest(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         authorization = request.headers.get("Authorization", "")
-        token = authorization.removeprefix("Guest ").strip() if authorization.startswith("Guest ") else ""
+        token = (
+            authorization.removeprefix("Guest ").strip()
+            if authorization.startswith("Guest ")
+            else ""
+        )
         try:
             g.guest_session = _access().authenticate(token)
         except GuestAccessError:
             return jsonify({"error": "Guest session expired. Start a new guest session."}), 401
         return view(*args, **kwargs)
+
     return wrapped
 
 
@@ -68,14 +69,14 @@ def guest_status():
 @require_guest
 def guest_conversations():
     items = _memory().list_conversations(_guest_id(), guest=True)
-    return jsonify({"conversations": [_conversation_json(item) for item in items]})
+    return jsonify({"conversations": [conversation_json(item) for item in items]})
 
 
 @guest_api.post("/conversations")
 @require_guest
 def guest_create_conversation():
     item = _memory().create_conversation(_guest_id(), guest=True)
-    return jsonify({"conversation": _conversation_json(item, include_messages=True)}), 201
+    return jsonify({"conversation": conversation_json(item, include_messages=True)}), 201
 
 
 @guest_api.get("/conversations/<conversation_id>")
@@ -85,7 +86,7 @@ def guest_get_conversation(conversation_id: str):
         item = _memory().get_conversation(_guest_id(), conversation_id, guest=True)
     except ConversationNotFoundError:
         return jsonify({"error": "Conversation not found"}), 404
-    return jsonify({"conversation": _conversation_json(item, include_messages=True)})
+    return jsonify({"conversation": conversation_json(item, include_messages=True)})
 
 
 @guest_api.delete("/conversations/<conversation_id>")
@@ -122,11 +123,13 @@ def guest_stream_message(conversation_id: str):
             if error.code == "GUEST_LIMIT_REACHED"
             else "Guest access is busy on this network today. Sign in to continue."
         )
-        return jsonify({
-            "error": message,
-            "code": error.code,
-            "resetAt": error.reset_at.isoformat().replace("+00:00", "Z"),
-        }), 429
+        return jsonify(
+            {
+                "error": message,
+                "code": error.code,
+                "resetAt": error.reset_at.isoformat().replace("+00:00", "Z"),
+            }
+        ), 429
 
     try:
         pending = _memory().start_message_stream(guest_id, conversation_id, content, guest=True)
@@ -139,16 +142,16 @@ def guest_stream_message(conversation_id: str):
             return jsonify({"error": "Conversation not found"}), 404
         if isinstance(error, AuthenticationError):
             current_app.logger.exception("OpenRouter authentication failed")
-            return jsonify({"error": _OPENROUTER_AUTH_ERROR}), 502
+            return jsonify({"error": OPENROUTER_AUTH_ERROR}), 502
         current_app.logger.exception("Guest question answering stream could not start")
         return jsonify({"error": "Unable to answer the question"}), 502
 
-    start_conversation = _conversation_json(pending.conversation)
-    start_user_message = _message_json(pending.user_message)
+    start_conversation = conversation_json(pending.conversation)
+    start_user_message = message_json(pending.user_message)
 
     @stream_with_context
     def generate():
-        yield _stream_event(
+        yield stream_event(
             "start",
             conversation=start_conversation,
             userMessage=start_user_message,
@@ -158,39 +161,44 @@ def guest_stream_message(conversation_id: str):
         try:
             for chunk in pending.chunks:
                 chunks.append(chunk)
-                yield _stream_event("delta", content=chunk)
+                yield stream_event("delta", content=chunk)
             answer = "".join(chunks).strip()
             if not answer:
                 raise RuntimeError("The answer model returned an empty response")
             result = _memory().finish_message_stream(
-                guest_id, conversation_id, pending.user_message, answer, pending.metadata, guest=True
+                guest_id,
+                conversation_id,
+                pending.user_message,
+                answer,
+                pending.metadata,
+                guest=True,
             )
-            yield _stream_event(
+            yield stream_event(
                 "complete",
-                conversation=_conversation_json(result.conversation),
+                conversation=conversation_json(result.conversation),
                 userMessage=start_user_message,
-                assistantMessage=_message_json(result.assistant_message),
+                assistantMessage=message_json(result.assistant_message),
             )
         except GeneratorExit:
             raise
         except Exception as error:
             db.session.rollback()
-            _memory().discard_failed_guest_message(guest_id, conversation_id, pending.user_message.id)
+            _memory().discard_failed_guest_message(
+                guest_id, conversation_id, pending.user_message.id
+            )
             _access().release(reservation)
             if isinstance(error, SafetyCheckUnavailable):
-                yield _stream_event("error", error=SAFETY_RETRY_MESSAGE, code=SAFETY_ERROR_CODE)
+                yield stream_event("error", error=SAFETY_RETRY_MESSAGE, code=SAFETY_ERROR_CODE)
                 return
             current_app.logger.exception("Guest question answering stream failed")
-            yield _stream_event(
+            yield stream_event(
                 "error",
-                error=_OPENROUTER_AUTH_ERROR if isinstance(error, AuthenticationError)
+                error=OPENROUTER_AUTH_ERROR
+                if isinstance(error, AuthenticationError)
                 else "Unable to answer the question",
             )
 
-    response = Response(generate(), content_type="application/x-ndjson; charset=utf-8")
-    response.headers["Cache-Control"] = "no-cache, no-transform"
-    response.headers["X-Accel-Buffering"] = "no"
-    return response
+    return ndjson_response(generate())
 
 
 @guest_api.post("/claim")

@@ -1,0 +1,12 @@
+include README.md LICENSE pyproject.toml
+include app.py store_index.py
+recursive-include backend *.py
+prune legacy
+prune research
+prune tests
+prune migrations
+prune Data
+prune frontend
+prune docs
+prune .cache
+global-exclude __pycache__ *.py[cod] .env .env.* *.pdf

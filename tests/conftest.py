@@ -1,6 +1,6 @@
 import pytest
 
-from backend.services.safety import SafetyDecision, SafetyCheckUnavailable
+from backend.services.safety import SafetyCheckUnavailable, SafetyDecision
 
 
 class FakeSafetyChecker:

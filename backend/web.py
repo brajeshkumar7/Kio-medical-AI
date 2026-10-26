@@ -1,52 +1,20 @@
-from pathlib import Path
-from threading import Lock
-
 from flask import Flask, jsonify
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from backend.ai.openrouter import create_chat_model, create_embeddings, create_review_model, create_safety_model
 from backend.api.conversations import conversations_api
 from backend.api.guests import guest_api
 from backend.auth import ClerkAuthenticator
 from backend.config import Settings
-from backend.data.ingestion import load_cached_chunks
 from backend.extensions import db, migrate
+from backend.integrations.openrouter import (
+    create_safety_model,
+)
 from backend.repositories.conversations import ConversationRepository
 from backend.services.conversation_memory import ConversationMemoryService
 from backend.services.guest_access import GuestAccessService
-from backend.services.rag import MedicalQuestionAnswering
-from backend.services.safety import SafetyChecker, SafetyCheckedMedicalQA
-from backend.vector_store import open_vector_store
-
-
-class LazyMedicalQuestionAnswering:
-    def __init__(self, settings: Settings):
-        self.settings = settings
-        self._service = None
-        self._lock = Lock()
-
-    def answer(self, question: str, history: list[tuple[str, str]] | None = None) -> str:
-        return self._get_service().answer(question, history)
-
-    def stream_answer(self, question: str, history: list[tuple[str, str]] | None = None):
-        return self._get_service().stream_answer(question, history)
-
-    def _get_service(self):
-        if self._service is None:
-            with self._lock:
-                if self._service is None:
-                    embeddings = create_embeddings(self.settings)
-                    vector_store = open_vector_store(self.settings, embeddings)
-                    data_dir = Path(__file__).resolve().parents[1] / "Data"
-                    self._service = MedicalQuestionAnswering(
-                        vector_store,
-                        create_chat_model(self.settings),
-                        self.settings,
-                        review_model=create_review_model(self.settings),
-                        lexical_documents=load_cached_chunks(data_dir, self.settings),
-                    )
-        return self._service
+from backend.services.rag.loader import LazyMedicalQuestionAnswering
+from backend.services.safety import SafetyCheckedMedicalQA, SafetyChecker
 
 
 def create_app(
