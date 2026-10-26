@@ -32,23 +32,37 @@ class ConversationMemoryService:
         self.medical_qa = medical_qa
         self.history_limit = history_limit
 
-    def list_conversations(self, clerk_user_id: str) -> list[Conversation]:
-        user = self.repository.get_or_create_user(clerk_user_id)
-        return self.repository.list_for_user(user.id)
+    def _owner_id(self, actor_id: str, guest: bool) -> str:
+        return actor_id if guest else self.repository.get_or_create_user(actor_id).id
 
-    def create_conversation(self, clerk_user_id: str) -> Conversation:
-        user = self.repository.get_or_create_user(clerk_user_id)
-        return self.repository.create(user.id)
+    def _get_owned(self, conversation_id: str, owner_id: str, guest: bool, *, lock: bool = False):
+        if guest:
+            return self.repository.get_guest_owned(conversation_id, owner_id, lock=lock)
+        return self.repository.get_owned(conversation_id, owner_id, lock=lock)
 
-    def get_conversation(self, clerk_user_id: str, conversation_id: str) -> Conversation:
-        user = self.repository.get_or_create_user(clerk_user_id)
-        conversation = self.repository.get_owned(conversation_id, user.id)
+    def list_conversations(self, actor_id: str, *, guest: bool = False) -> list[Conversation]:
+        owner_id = self._owner_id(actor_id, guest)
+        return (
+            self.repository.list_for_guest(owner_id)
+            if guest else self.repository.list_for_user(owner_id)
+        )
+
+    def create_conversation(self, actor_id: str, *, guest: bool = False) -> Conversation:
+        owner_id = self._owner_id(actor_id, guest)
+        return (
+            self.repository.create_for_guest(owner_id)
+            if guest else self.repository.create(owner_id)
+        )
+
+    def get_conversation(self, actor_id: str, conversation_id: str, *, guest: bool = False) -> Conversation:
+        owner_id = self._owner_id(actor_id, guest)
+        conversation = self._get_owned(conversation_id, owner_id, guest)
         if conversation is None:
             raise ConversationNotFoundError
         return conversation
 
-    def delete_conversation(self, clerk_user_id: str, conversation_id: str) -> None:
-        conversation = self.get_conversation(clerk_user_id, conversation_id)
+    def delete_conversation(self, actor_id: str, conversation_id: str, *, guest: bool = False) -> None:
+        conversation = self.get_conversation(actor_id, conversation_id, guest=guest)
         self.repository.delete(conversation)
 
     def send_message(self, clerk_user_id: str, conversation_id: str, content: str) -> ChatResult:
@@ -84,20 +98,23 @@ class ConversationMemoryService:
         return ChatResult(conversation, user_message, assistant_message)
 
     def start_message_stream(
-        self, clerk_user_id: str, conversation_id: str, content: str
+        self, actor_id: str, conversation_id: str, content: str, *, guest: bool = False
     ) -> PendingChatStream:
-        user = self.repository.get_or_create_user(clerk_user_id)
-        conversation = self.repository.get_owned(conversation_id, user.id, lock=True)
+        owner_id = self._owner_id(actor_id, guest)
+        conversation = self._get_owned(conversation_id, owner_id, guest, lock=True)
         if conversation is None:
             raise ConversationNotFoundError
 
         history = [(message.role, message.content) for message in conversation.messages[-self.history_limit :]]
+        if guest:
+            answer_stream = self.medical_qa.stream_answer(content, history)
         if not conversation.messages:
             conversation.title = _conversation_title(content)
         user_message = self.repository.add_message(conversation, "user", content)
         db.session.commit()
 
-        answer_stream = self.medical_qa.stream_answer(content, history)
+        if not guest:
+            answer_stream = self.medical_qa.stream_answer(content, history)
         return PendingChatStream(
             conversation=conversation,
             user_message=user_message,
@@ -107,14 +124,16 @@ class ConversationMemoryService:
 
     def finish_message_stream(
         self,
-        clerk_user_id: str,
+        actor_id: str,
         conversation_id: str,
         user_message: Message,
         content: str,
         metadata: dict,
+        *,
+        guest: bool = False,
     ) -> ChatResult:
-        user = self.repository.get_or_create_user(clerk_user_id)
-        conversation = self.repository.get_owned(conversation_id, user.id, lock=True)
+        owner_id = self._owner_id(actor_id, guest)
+        conversation = self._get_owned(conversation_id, owner_id, guest, lock=True)
         if conversation is None:
             raise ConversationNotFoundError
         assistant_message = self.repository.add_message(
@@ -125,6 +144,18 @@ class ConversationMemoryService:
         )
         db.session.commit()
         return ChatResult(conversation, user_message, assistant_message)
+
+    def discard_failed_guest_message(self, guest_id: str, conversation_id: str, message_id: str) -> None:
+        conversation = self.repository.get_guest_owned(conversation_id, guest_id, lock=True)
+        if conversation is None:
+            return
+        message = next((item for item in conversation.messages if item.id == message_id), None)
+        if message is None or message.role != "user":
+            return
+        db.session.delete(message)
+        if len(conversation.messages) == 1:
+            conversation.title = "New conversation"
+        db.session.commit()
 
 
 def _conversation_title(content: str) -> str:

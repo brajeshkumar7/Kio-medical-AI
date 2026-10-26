@@ -22,6 +22,15 @@ class ConversationRepository:
         )
         return list(db.session.scalars(statement))
 
+    def list_for_guest(self, guest_session_id: str, limit: int = 50) -> list[Conversation]:
+        statement = (
+            select(Conversation)
+            .where(Conversation.guest_session_id == guest_session_id)
+            .order_by(Conversation.updated_at.desc())
+            .limit(limit)
+        )
+        return list(db.session.scalars(statement))
+
     def get_owned(self, conversation_id: str, user_id: str, *, lock: bool = False) -> Conversation | None:
         statement = select(Conversation).where(
             Conversation.id == conversation_id, Conversation.user_id == user_id
@@ -30,8 +39,25 @@ class ConversationRepository:
             statement = statement.with_for_update()
         return db.session.scalar(statement)
 
+    def get_guest_owned(
+        self, conversation_id: str, guest_session_id: str, *, lock: bool = False
+    ) -> Conversation | None:
+        statement = select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.guest_session_id == guest_session_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return db.session.scalar(statement)
+
     def create(self, user_id: str, title: str = "New conversation") -> Conversation:
         conversation = Conversation(user_id=user_id, title=title)
+        db.session.add(conversation)
+        db.session.commit()
+        return conversation
+
+    def create_for_guest(self, guest_session_id: str) -> Conversation:
+        conversation = Conversation(guest_session_id=guest_session_id)
         db.session.add(conversation)
         db.session.commit()
         return conversation

@@ -32,6 +32,8 @@ class Settings:
     debug: bool = False
     frontend_origin: str = "http://localhost:3000"
     history_message_limit: int = 12
+    guest_ip_hash_secret: str = ""
+    trusted_proxy_hops: int = 0
 
     @classmethod
     def from_env(cls, *, require_app_services: bool = True) -> "Settings":
@@ -45,6 +47,7 @@ class Settings:
                 {
                     "DATABASE_URL": os.getenv("DATABASE_URL"),
                     "CLERK_ISSUER_URL": os.getenv("CLERK_ISSUER_URL"),
+                    "GUEST_IP_HASH_SECRET": os.getenv("GUEST_IP_HASH_SECRET"),
                 }
             )
         missing = [name for name, value in required.items() if not value]
@@ -81,6 +84,8 @@ class Settings:
             debug=os.getenv("FLASK_DEBUG", "false").lower() == "true",
             frontend_origin=os.getenv("FRONTEND_ORIGIN", "http://localhost:3000"),
             history_message_limit=int(os.getenv("HISTORY_MESSAGE_LIMIT", "12")),
+            guest_ip_hash_secret=os.getenv("GUEST_IP_HASH_SECRET", ""),
+            trusted_proxy_hops=int(os.getenv("TRUSTED_PROXY_HOPS", "0")),
         )
 
 

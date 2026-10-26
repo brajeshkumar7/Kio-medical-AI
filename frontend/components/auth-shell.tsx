@@ -1,12 +1,13 @@
 "use client";
 
 import { Moon, ShieldCheck, Stethoscope, Sun } from "lucide-react";
+import Link from "next/link";
 import AuthCareSignal from "@/components/auth-care-signal";
 import KioBrandMark from "@/components/kio-brand";
 import { useKioTheme } from "@/components/theme-provider";
 
 
-export default function AuthShell({ children }: { children: React.ReactNode }) {
+export default function AuthShell({ children, allowGuest = false }: { children: React.ReactNode; allowGuest?: boolean }) {
   const { theme, toggleTheme } = useKioTheme();
 
   return (
@@ -28,7 +29,10 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
         <div className="auth-trust"><ShieldCheck size={16} /><span>Secure account access powered by Clerk</span></div>
       </section>
       <section className="auth-form-panel">
-        {children}
+        <div className="auth-form-stack">
+          {children}
+          {allowGuest && <Link className="guest-entry-link" href="/guest">Continue as guest</Link>}
+        </div>
       </section>
     </main>
   );

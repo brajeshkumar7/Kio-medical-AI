@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth, useClerk, useUser } from "@clerk/nextjs";
+import Link from "next/link";
 import {
   Check,
   ChevronDown,
@@ -17,6 +18,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
+  RefreshCw,
   Search,
   Send,
   ShieldCheck,
@@ -33,12 +35,16 @@ import MedicalAnswer from "@/components/medical-answer";
 import { useKioTheme } from "@/components/theme-provider";
 import { useToast } from "@/components/toast-provider";
 import {
+  checkApiAvailability,
   createConversation,
   deleteConversation,
   getConversation,
   listConversations,
   streamMessage,
+  getGuestStatus,
+  type GuestUsage,
 } from "@/lib/api";
+import { ensureGuestSession, transferGuestSession } from "@/lib/guest-session";
 import { Conversation, Message, starterPrompts } from "@/lib/types";
 
 type RecognitionResult = {
@@ -72,6 +78,7 @@ function AssistantMark({ small = false }: { small?: boolean }) {
 
 
 function Sidebar({
+  guest,
   open,
   conversations,
   activeId,
@@ -83,6 +90,7 @@ function Sidebar({
   onDelete,
   deletingId,
 }: {
+  guest: boolean;
   open: boolean;
   conversations: Conversation[];
   activeId: string | null;
@@ -107,8 +115,8 @@ function Sidebar({
   const visibleConversations = conversations.filter((item) =>
     item.title.toLowerCase().includes(searchQuery.trim().toLowerCase()),
   );
-  const displayName = user?.fullName || user?.firstName || "Kio user";
-  const email = user?.primaryEmailAddress?.emailAddress || "Signed in";
+  const displayName = guest ? "Guest" : user?.fullName || user?.firstName || "Kio user";
+  const email = guest ? "Sign in to keep your chats" : user?.primaryEmailAddress?.emailAddress || "Signed in";
   const initials = displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 
   useEffect(() => {
@@ -270,7 +278,14 @@ function Sidebar({
           </>
         )}
 
-        <div className={`account-control ${compact ? "account-control-collapsed" : ""}`} ref={accountMenuRef}>
+        {guest ? (
+          <div className={`account-control ${compact ? "account-control-collapsed" : ""}`}>
+            <Link className="sidebar-footer" href="/" title="Sign in">
+              <span className="account-avatar account-avatar-small">G</span>
+              <span className="profile-copy"><strong>Sign in</strong></span>
+            </Link>
+          </div>
+        ) : <div className={`account-control ${compact ? "account-control-collapsed" : ""}`} ref={accountMenuRef}>
           {accountMenuOpen && (
             <div className="account-menu" role="dialog" aria-label="Account settings">
               <div className="account-menu-profile">
@@ -301,7 +316,7 @@ function Sidebar({
             <span className="profile-copy"><strong>{displayName}</strong></span>
             <ChevronUp size={16} className={accountMenuOpen ? "account-chevron account-chevron-open" : "account-chevron"} />
           </button>
-        </div>
+        </div>}
       </aside>
     </>
   );
@@ -328,7 +343,8 @@ function MessageBubble({ message }: { message: Message }) {
 }
 
 
-export default function ChatWorkspace() {
+export default function ChatWorkspace({ mode = "account" }: { mode?: "account" | "guest" }) {
+  const isGuest = mode === "guest";
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
   const { theme, toggleTheme } = useKioTheme();
@@ -347,6 +363,10 @@ export default function ChatWorkspace() {
   const [isDictating, setIsDictating] = useState(false);
   const [dictationTranscript, setDictationTranscript] = useState("");
   const [error, setError] = useState("");
+  const [guestToken, setGuestToken] = useState<string | null>(null);
+  const [guestUsage, setGuestUsage] = useState<GuestUsage | null>(null);
+  const [backendStatus, setBackendStatus] = useState<"checking" | "online" | "offline">("checking");
+  const backendCheckInFlight = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<RecognitionInstance | null>(null);
   const dictationTranscriptRef = useRef("");
@@ -372,22 +392,87 @@ export default function ChatWorkspace() {
   }
 
   const token = useCallback(async () => {
+    if (isGuest) {
+      if (!guestToken) throw new Error("Guest session is still loading.");
+      return guestToken;
+    }
     const value = await getToken();
     if (!value) throw new Error("Your session has expired. Please sign in again.");
     return value;
-  }, [getToken]);
+  }, [getToken, guestToken, isGuest]);
 
-  const refreshConversations = useCallback(async () => {
-    const items = await listConversations(await token());
-    setConversations(items);
-  }, [token]);
+  const checkBackend = useCallback(async (showChecking = false) => {
+    if (backendCheckInFlight.current) return;
+    backendCheckInFlight.current = true;
+    if (showChecking) setBackendStatus("checking");
+    try {
+      setBackendStatus(await checkApiAvailability() ? "online" : "offline");
+    } finally {
+      backendCheckInFlight.current = false;
+    }
+  }, []);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    void checkBackend();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void checkBackend();
+    }, 15000);
+    const recheck = () => { void checkBackend(); };
+    window.addEventListener("online", recheck);
+    document.addEventListener("visibilitychange", recheck);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("online", recheck);
+      document.removeEventListener("visibilitychange", recheck);
+    };
+  }, [checkBackend]);
+
+  const refreshConversations = useCallback(async () => {
+    const authToken = await token();
+    if (!isGuest) {
+      try {
+        await transferGuestSession(authToken);
+      } catch (requestError) {
+        setError(requestError instanceof Error ? requestError.message : "Unable to transfer guest chats.");
+      }
+    }
+    const items = await listConversations(authToken, isGuest);
+    setConversations(items);
+  }, [token, isGuest]);
+
+  useEffect(() => {
+    if (!isGuest || backendStatus !== "online") return;
+    ensureGuestSession()
+      .then(({ token: issuedToken, usage }) => {
+        setGuestToken(issuedToken);
+        setGuestUsage(usage);
+      })
+      .catch((requestError) => {
+        setError(requestError instanceof Error ? requestError.message : "Unable to start guest chat.");
+        setIsHistoryLoading(false);
+        void checkBackend();
+      });
+  }, [isGuest, backendStatus, checkBackend]);
+
+  useEffect(() => {
+    if (!isGuest || !guestToken || !guestUsage) return;
+    const delay = Math.max(0, Date.parse(guestUsage.resetAt) - Date.now()) + 1000;
+    const timer = window.setTimeout(() => {
+      getGuestStatus(guestToken).then(setGuestUsage).catch(() => {});
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [isGuest, guestToken, guestUsage]);
+
+  useEffect(() => {
+    if (backendStatus !== "online" || (isGuest ? !guestToken : (!isLoaded || !isSignedIn))) return;
+    setIsHistoryLoading(true);
     refreshConversations()
-      .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "Unable to load conversations."))
+      .catch((requestError) => {
+        setError(requestError instanceof Error ? requestError.message : "Unable to load conversations.");
+        void checkBackend();
+      })
       .finally(() => setIsHistoryLoading(false));
-  }, [isLoaded, isSignedIn, refreshConversations]);
+  }, [isGuest, guestToken, isLoaded, isSignedIn, refreshConversations, backendStatus, checkBackend]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -416,11 +501,12 @@ export default function ChatWorkspace() {
     setStreamingAnswer(null);
     setSidebarOpen(false);
     try {
-      const conversation = await getConversation(await token(), id);
+      const conversation = await getConversation(await token(), id, isGuest);
       setActiveId(conversation.id);
       setMessages(conversation.messages);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load the conversation.");
+      void checkBackend();
     } finally {
       setIsHistoryLoading(false);
     }
@@ -436,12 +522,13 @@ export default function ChatWorkspace() {
     if (!shouldDelete) return;
     setDeletingId(id);
     try {
-      await deleteConversation(await token(), id);
+      await deleteConversation(await token(), id, isGuest);
       setConversations((current) => current.filter((item) => item.id !== id));
       if (id === activeId) startNewChat();
       notify({ title: "Conversation deleted", tone: "success" });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to delete the conversation.");
+      void checkBackend();
     } finally {
       setDeletingId(null);
     }
@@ -450,6 +537,10 @@ export default function ChatWorkspace() {
   async function submitMessage(text = input) {
     const question = text.trim();
     if (!question || isLoading) return;
+    if (isGuest && guestUsage && guestUsage.remaining <= 0 && Date.now() < Date.parse(guestUsage.resetAt)) {
+      setError("Guest questions are used up for today. Sign in to continue.");
+      return;
+    }
 
     if (isDictating) cancelDictation();
     setInput("");
@@ -503,7 +594,7 @@ export default function ChatWorkspace() {
     try {
       const authToken = await token();
       if (!conversationId) {
-        const created = await createConversation(authToken);
+        const created = await createConversation(authToken, isGuest);
         conversationId = created.id;
         setActiveId(created.id);
         setConversations((current) => [created, ...current]);
@@ -534,7 +625,7 @@ export default function ChatWorkspace() {
           streamedContent += content;
           schedulePresentation();
         },
-      });
+      }, isGuest);
       streamFinished = true;
       schedulePresentation();
       await presentationDone;
@@ -558,7 +649,11 @@ export default function ChatWorkspace() {
       setMessages((current) => current.filter((message) => message.id !== optimisticId));
       setStreamingAnswer(null);
       setError(requestError instanceof Error ? requestError.message : "Something went wrong.");
+      void checkBackend();
     } finally {
+      if (isGuest && guestToken) {
+        getGuestStatus(guestToken).then(setGuestUsage).catch(() => {});
+      }
       setIsLoading(false);
     }
   }
@@ -634,9 +729,31 @@ export default function ChatWorkspace() {
   }
 
   const hasConversation = messages.length > 0 || isHistoryLoading;
+  const guestBlocked = isGuest && guestUsage !== null
+    && guestUsage.remaining <= 0 && Date.now() < Date.parse(guestUsage.resetAt);
+  if (backendStatus !== "online") {
+    return (
+      <main className="service-shell">
+        <section className="service-status" role="status" aria-live="polite">
+          <AssistantMark />
+          <h1>{backendStatus === "checking" ? "Connecting to Kio" : "Chat is temporarily unavailable"}</h1>
+          <p>{backendStatus === "checking"
+            ? "Checking the chat service before opening your workspace."
+            : "We can’t reach the chat service right now. Your sign-in is still active. Please try again in a moment."}</p>
+          {backendStatus === "offline" && (
+            <button className="service-retry" type="button" onClick={() => void checkBackend(true)}>
+              <RefreshCw size={17} /> Try again
+            </button>
+          )}
+          {backendStatus === "checking" && <KioLoadingIndicator size="section" label="Connecting to chat service..." />}
+        </section>
+      </main>
+    );
+  }
   return (
     <main className="app-shell">
       <Sidebar
+        guest={isGuest}
         open={sidebarOpen}
         conversations={conversations}
         activeId={activeId}
@@ -653,12 +770,19 @@ export default function ChatWorkspace() {
           <button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Open menu"><Menu size={20} /></button>
           <div className="app-title">KIO Medical AI <ChevronDown size={15} /></div>
           <div className="topbar-actions">
-            <span className="clinical-status"><ShieldCheck size={14} /> Private clinical conversation</span>
+            <span className="clinical-status"><ShieldCheck size={14} /> {isGuest ? "Guest conversation" : "Private clinical conversation"}</span>
             <button className="icon-button theme-toggle" type="button" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </button>
           </div>
         </header>
+
+        {isGuest && (
+          <div className="guest-allowance" role="status">
+            <span>{guestUsage ? `${guestUsage.remaining} of ${guestUsage.limit} guest questions left today` : "Preparing guest access..."}</span>
+            <Link href="/">Sign in to keep your chats</Link>
+          </div>
+        )}
 
         <div className={`conversation ${hasConversation ? "conversation-active" : ""}`}>
           {!hasConversation ? (
@@ -669,7 +793,7 @@ export default function ChatWorkspace() {
                 {starterPrompts.map((prompt, index) => {
                   const PromptIcon = [HeartPulse, MoonStar, Thermometer, ShieldCheck][index] || Stethoscope;
                   return (
-                    <button className="prompt-card" key={prompt} onClick={() => void submitMessage(prompt)}>
+                    <button className="prompt-card" key={prompt} disabled={guestBlocked || (isGuest && !guestToken)} onClick={() => void submitMessage(prompt)}>
                       <span className={`prompt-icon prompt-icon-${index}`}><PromptIcon size={17} /></span>
                       <span>{prompt}</span>
                     </button>
@@ -693,6 +817,13 @@ export default function ChatWorkspace() {
         </div>
 
         <div className="composer-wrap">
+          {guestBlocked && guestUsage && (
+            <div className="guest-limit-message" role="alert">
+              <strong>Guest questions are unavailable for today.</strong>
+              <span>Your allowance resets at {new Date(guestUsage.resetAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.</span>
+              <Link href="/">Sign in to continue</Link>
+            </div>
+          )}
           <form className="composer" onSubmit={handleSubmit}>
             <button type="button" className="composer-tool" disabled aria-label="Attachments are coming soon" title="Attachments are coming soon"><Paperclip size={19} /></button>
             {isDictating ? (
@@ -708,9 +839,9 @@ export default function ChatWorkspace() {
               </div>
             ) : (
               <>
-                <textarea value={input} maxLength={8000} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submitMessage(); } }} placeholder="Ask anything about your health..." rows={1} />
+                <textarea value={input} maxLength={8000} disabled={guestBlocked || (isGuest && !guestToken)} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submitMessage(); } }} placeholder={guestBlocked ? "Sign in to ask another question" : "Ask anything about your health..."} rows={1} />
                 <button type="button" className="dictate-button" onClick={startDictation} disabled={!dictationSupported || isLoading} aria-label="Dictate message" title={dictationSupported ? "Dictate message" : "Dictation is not supported by this browser"}><Mic size={19} /></button>
-                <button type="submit" className="send-button" disabled={isLoading} aria-label={isLoading ? "Sending message" : "Send message"}>
+                <button type="submit" className="send-button" disabled={isLoading || guestBlocked || (isGuest && !guestToken)} aria-label={isLoading ? "Sending message" : "Send message"}>
                   <Send size={18} />
                 </button>
               </>

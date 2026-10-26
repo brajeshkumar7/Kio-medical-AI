@@ -1312,6 +1312,19 @@ html[data-theme="dark"] .auth-page { --auth-medical: #6ee7b7; }
   display: grid;
   place-items: center;
 }
+.auth-form-stack { width: min(400px, 100%); display: grid; justify-items: center; gap: 20px; }
+.guest-entry-link { color: var(--auth-medical); font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.guest-allowance { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 11px 24px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.guest-allowance a, .guest-limit-message a { color: var(--medical); font-weight: 600; }
+.guest-limit-message { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 12px 16px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-solid); font-size: 13px; }
+.guest-limit-message span { color: var(--muted); }
+.service-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--paper); }
+.service-status { width: min(440px, 100%); display: grid; justify-items: center; gap: 16px; text-align: center; color: var(--ink); }
+.service-status h1 { margin: 4px 0 0; font-size: clamp(28px, 4vw, 38px); font-weight: 600; }
+.service-status p { margin: 0; color: var(--muted); line-height: 1.6; }
+.service-retry { display: inline-flex; align-items: center; gap: 9px; margin-top: 8px; padding: 11px 18px; border: 0; border-radius: 10px; background: var(--medical); color: white; font: inherit; font-weight: 600; cursor: pointer; }
+.service-retry:hover { filter: brightness(.92); }
+.service-retry:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
 .auth-trust svg { color: var(--auth-medical); }
 .clerk-card-box { width: min(400px, 100%); }
 .clerk-card { background: var(--surface-solid); border-color: var(--line); }

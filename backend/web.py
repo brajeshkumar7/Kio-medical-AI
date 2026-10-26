@@ -3,15 +3,18 @@ from threading import Lock
 
 from flask import Flask, jsonify
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from backend.ai.openrouter import create_chat_model, create_embeddings, create_review_model
 from backend.api.conversations import conversations_api
+from backend.api.guests import guest_api
 from backend.auth import ClerkAuthenticator
 from backend.config import Settings
 from backend.data.ingestion import load_cached_chunks
 from backend.extensions import db, migrate
 from backend.repositories.conversations import ConversationRepository
 from backend.services.conversation_memory import ConversationMemoryService
+from backend.services.guest_access import GuestAccessService
 from backend.services.rag import MedicalQuestionAnswering
 from backend.vector_store import open_vector_store
 
@@ -53,6 +56,8 @@ def create_app(
 ) -> Flask:
     settings = settings or Settings.from_env()
     app = Flask(__name__)
+    if settings.trusted_proxy_hops:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=settings.trusted_proxy_hops)
     app.config.update(
         SQLALCHEMY_DATABASE_URI=settings.database_url,
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
@@ -60,8 +65,11 @@ def create_app(
     )
     CORS(
         app,
-        resources={r"/api/*": {"origins": list(settings.clerk_authorized_parties)}},
-        allow_headers=["Authorization", "Content-Type"],
+        resources={
+            r"/api/*": {"origins": list(settings.clerk_authorized_parties)},
+            r"/health": {"origins": list(settings.clerk_authorized_parties)},
+        },
+        allow_headers=["Authorization", "Content-Type", "X-Kio-Guest-Token"],
     )
 
     db.init_app(app)
@@ -73,7 +81,14 @@ def create_app(
     app.extensions["conversation_memory"] = ConversationMemoryService(
         ConversationRepository(), medical_qa, settings.history_message_limit
     )
+    app.extensions["guest_access"] = GuestAccessService(settings.guest_ip_hash_secret)
     app.register_blueprint(conversations_api)
+    app.register_blueprint(guest_api)
+
+    @app.cli.command("purge-guests")
+    def purge_guests():
+        count = app.extensions["guest_access"].purge_expired()
+        print(f"Purged {count} expired guest sessions.")
 
     @app.get("/health")
     def health():

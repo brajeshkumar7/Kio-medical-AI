@@ -42,6 +42,8 @@ Update the root .env file with:
     OPENROUTER_API_KEY=...
     DATABASE_URL=postgresql://...
     CLERK_ISSUER_URL=https://your-instance.clerk.accounts.dev
+    GUEST_IP_HASH_SECRET=<random 32-byte secret>
+    TRUSTED_PROXY_HOPS=0
     CLERK_AUTHORIZED_PARTIES=http://localhost:3000
     FRONTEND_ORIGIN=http://localhost:3000
     PINECONE_INDEX_NAME=medicalbot-v2
@@ -90,7 +92,11 @@ Start Next.js:
 
     npm run dev
 
-Open http://localhost:3000 to sign in or create an account. After sign-in,
+Open http://localhost:3000 to sign in or choose **Continue as guest**. Guests
+can ask three questions per UTC day across multiple conversations at /guest;
+the API also limits each network address to 60 guest questions per UTC day.
+Guest conversations stay in PostgreSQL for 30 days after the last visit and
+transfer to the signed-in account automatically. After sign-in,
 KIO opens the protected workspace at http://localhost:3000/console. Send a
 message to create a PostgreSQL conversation on the first message. KIO
 stores both sides of every exchange, and reloads the user-owned history after
@@ -101,4 +107,10 @@ future sign-ins.
 Use flask --app app db upgrade as the backend pre-deploy command and
 gunicorn app:app as the start command. Set the production frontend URL in both
 FRONTEND_ORIGIN and CLERK_AUTHORIZED_PARTIES. Set NEXT_PUBLIC_API_URL to the
-deployed Flask URL.
+deployed Flask URL. Set a stable, private GUEST_IP_HASH_SECRET in every backend
+instance. Set TRUSTED_PROXY_HOPS to the number of trusted reverse proxies in
+front of Flask (typically 1 on Render); leave it at 0 when serving directly.
+The daily GitHub Actions cleanup workflow removes guest sessions and
+conversations inactive for 30 days. Configure the repository's `DATABASE_URL`
+Actions secret so it can connect to PostgreSQL. You can also run
+`python -m backend.jobs.purge_guests` manually with `DATABASE_URL` set.

@@ -8,7 +8,7 @@ export default async function RootPage() {
   if (userId) redirect("/console");
 
   return (
-    <AuthShell>
+    <AuthShell allowGuest>
       <ClerkAuthForm mode="sign-in" onHomePage />
     </AuthShell>
   );
