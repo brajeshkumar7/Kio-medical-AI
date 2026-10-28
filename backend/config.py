@@ -34,6 +34,8 @@ class Settings:
     history_message_limit: int = 12
     guest_ip_hash_secret: str = ""
     trusted_proxy_hops: int = 0
+    database_pool_mode: str = "default"
+    lexical_cache_path: str = ""
 
     @classmethod
     def from_env(cls, *, require_app_services: bool = True) -> "Settings":
@@ -91,6 +93,8 @@ class Settings:
             history_message_limit=int(os.getenv("HISTORY_MESSAGE_LIMIT", "12")),
             guest_ip_hash_secret=os.getenv("GUEST_IP_HASH_SECRET", ""),
             trusted_proxy_hops=int(os.getenv("TRUSTED_PROXY_HOPS", "0")),
+            database_pool_mode=os.getenv("DATABASE_POOL_MODE", "default"),
+            lexical_cache_path=os.getenv("LEXICAL_CACHE_PATH", ""),
         )
 
 

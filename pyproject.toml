@@ -45,6 +45,12 @@ dev = [
 py-modules = ["app", "store_index"]
 include-package-data = false
 
+[tool.vercel]
+entrypoint = "app:app"
+
+[tool.vercel.scripts]
+build = "python -m backend.jobs.prepare_vercel_cache"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["backend", "backend.*"]

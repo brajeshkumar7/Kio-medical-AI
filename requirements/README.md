@@ -2,7 +2,8 @@
 
 `pyproject.toml` declares direct dependencies. `production.txt` pins the tested
 runtime resolution; `development.txt` includes that runtime plus pytest, Ruff,
-pip-tools, and build tooling. Both target Python 3.11. Root `requirements.txt`
+pip-tools, and build tooling. Locks retain the tested Python 3.11 runtime
+versions; CI also validates Python 3.12 for Vercel. Root `requirements.txt`
 includes the runtime lock and editable project, preserving the existing install
 command and guest-cleanup workflow.
 

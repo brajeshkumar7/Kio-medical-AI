@@ -127,6 +127,12 @@ See [safety configuration, behavior, and staging evaluation](docs/safety.md).
 
 ## Repository organization and quality checks
 
+Deploying both applications on Vercel: follow the
+[deployment guide](docs/vercel-deployment.md) or its
+[Word edition](docs/KIO-Vercel-Deployment-Guide.docx). Vercel uses Python 3.12;
+local Python 3.11 remains supported. Start on vercel.app with staging credentials
+before promoting to a custom domain with production Clerk credentials.
+
 The supported Python package is `backend/`; the previous root `src/` is archived
 intact under `legacy/src/` and excluded from production packaging. The existing
 Next.js frontend remains under `frontend/`. Root startup, indexing, migration

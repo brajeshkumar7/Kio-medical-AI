@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "flask",
+  "installCommand": "uv pip install -r requirements/production.txt",
+  "functions": {
+    "app.py": {
+      "maxDuration": 300,
+      "includeFiles": "backend/_artifacts/**",
+      "excludeFiles": "{Data/**,frontend/**,legacy/**,research/**,tests/**,docs/**,migrations/**,image/**,.github/**,.venv/**,.cache/**,.pytest_cache/**,.ruff_cache/**,.benchmarks/**,dist/**,build/**,**/*.egg-info/**,**/__pycache__/**,**/.env,**/.env.*,**/*.pdf}"
+    }
+  }
+}

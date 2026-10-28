@@ -1,5 +1,6 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
+from sqlalchemy.pool import NullPool
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from backend.api.conversations import conversations_api
@@ -26,12 +27,17 @@ def create_app(
 ) -> Flask:
     settings = settings or Settings.from_env()
     app = Flask(__name__)
+    engine_options = {"pool_pre_ping": True}
+    if settings.database_pool_mode == "null":
+        engine_options["poolclass"] = NullPool
+    elif settings.database_pool_mode != "default":
+        raise ValueError("DATABASE_POOL_MODE must be default or null")
     if settings.trusted_proxy_hops:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=settings.trusted_proxy_hops)
     app.config.update(
         SQLALCHEMY_DATABASE_URI=settings.database_url,
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True},
+        SQLALCHEMY_ENGINE_OPTIONS=engine_options,
     )
     CORS(
         app,

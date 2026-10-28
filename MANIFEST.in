@@ -9,4 +9,5 @@ prune Data
 prune frontend
 prune docs
 prune .cache
+prune backend/_artifacts
 global-exclude __pycache__ *.py[cod] .env .env.* *.pdf

@@ -1,5 +1,11 @@
 # Deployment compatibility and rollback
 
+For both applications on Vercel, follow the complete
+[Vercel deployment guide](vercel-deployment.md), also available as a
+[Word document](KIO-Vercel-Deployment-Guide.docx). It covers private lexical-cache
+provisioning, serverless configuration, staging, and production promotion.
+The conventional-server instructions below remain supported.
+
 The repository-based deployment and existing commands remain supported. This
 refactor does not introduce containers, deploy a release, change secrets, or
 modify the hosted database/vector index.

@@ -181,3 +181,6 @@ out/
 frontend/.env.local
 *.tsbuildinfo
 /Data/
+/backend/_artifacts/
+/.vercel/
+/frontend/.vercel/

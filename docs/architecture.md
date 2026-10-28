@@ -2,7 +2,8 @@
 
 The supported runtime is the Flask `backend/` package and the separate Next.js
 `frontend/`. The Python distribution remains `medical-chatbot-genai` 0.1.0.
-Python 3.11 is the tested backend target; frontend CI uses Node 24.
+Backend CI covers Python 3.11 and 3.12; Vercel selects Python 3.12.
+Frontend CI and Vercel use Node 24.
 
 | Location | Responsibility |
 | --- | --- |
@@ -15,8 +16,8 @@ Python 3.11 is the tested backend target; frontend CI uses Node 24.
 | `backend/services/rag/` | Lazy initialization, QA pipeline, lexical scoring, fusion, source formatting, result types |
 | `backend/integrations/` | OpenRouter factories and Pinecone integration |
 | `backend/prompts/` | Existing medical prompts, unchanged in value |
-| `backend/data/` | PDF loading, recursive splitting, metadata and caching |
-| `backend/jobs/` | Indexing, guest cleanup and explicit safety evaluation |
+| `backend/data/` | PDF loading, splitting, local caches and portable lexical artifacts |
+| `backend/jobs/` | Indexing, retention, safety evaluation, artifact export and deployment checks |
 | `frontend/` | Existing feature-based Next.js application and its tests |
 | `tests/unit/`, `tests/integration/` | Isolated logic checks and endpoint/database checks |
 | `tests/fixtures/`, `tests/evaluation/` | Golden parity fixtures and synthetic safety corpus |
@@ -43,7 +44,12 @@ recreation behavior.
 `Data/` stays at the repository root and is excluded from Git and Python
 artifacts. The application still needs its source library or corresponding
 chunk cache for lexical retrieval; Pinecone does not replace those local inputs.
-Provision the same PDF library separately on the backend host.
+Provision the PDF library on conventional hosts. On Vercel, export the matching
+local chunk cache and download its private versioned artifact during the build.
+`LEXICAL_CACHE_PATH` selects read-only artifact loading without PDF access or
+runtime cache writes. Artifact failures stop retrieval initialization rather
+than silently disabling lexical retrieval. See the
+[Vercel guide](vercel-deployment.md) for commands and environment settings.
 
 Default chunks stay in `.cache/medical-chunks-<fingerprint>.json.gz`. Fingerprint
 inputs remain file names, sizes, modification times, chunk settings and version.
