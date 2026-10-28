@@ -1,0 +1,10 @@
+# Frontend project rules override the repository-root backend ignore file.
+node_modules/
+.next/
+.vercel/
+out/
+tests/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
