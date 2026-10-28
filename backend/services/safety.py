@@ -21,6 +21,10 @@ SAFE_REDIRECTION = (
 class SafetyCheckUnavailable(Exception):
     """A provider error or invalid classification must never become an allow decision."""
 
+    def __init__(self, message=SAFETY_RETRY_MESSAGE, *, reason="invalid_classification"):
+        super().__init__(message)
+        self.reason = reason
+
 
 @dataclass(frozen=True)
 class SafetyDecision:
@@ -90,20 +94,43 @@ class SafetyChecker:
         messages = [HumanMessage(content=prompt)]
         if response is not None:
             messages.append(AIMessage(content=response))
+        finish_reason = "unknown"
+        completion_tokens = None
+        reasoning_tokens = None
         try:
             result = self.model.invoke(messages)
-            if result.response_metadata.get("finish_reason") in {"length", "content_filter"}:
-                raise SafetyCheckUnavailable(SAFETY_RETRY_MESSAGE)
+            reported_finish = result.response_metadata.get("finish_reason")
+            if reported_finish in {"stop", "length", "content_filter", "error", "tool_calls"}:
+                finish_reason = reported_finish
+            usage = result.usage_metadata or {}
+            reported_completion = usage.get("output_tokens")
+            reported_reasoning = (usage.get("output_token_details") or {}).get("reasoning")
+            if isinstance(reported_completion, int) and reported_completion >= 0:
+                completion_tokens = reported_completion
+            if isinstance(reported_reasoning, int) and reported_reasoning >= 0:
+                reasoning_tokens = reported_reasoning
+            if finish_reason == "length":
+                raise SafetyCheckUnavailable(reason="truncated")
+            if finish_reason in {"content_filter", "error", "tool_calls"}:
+                raise SafetyCheckUnavailable(reason="provider_rejected")
+            if result.additional_kwargs.get("refusal"):
+                raise SafetyCheckUnavailable(reason="provider_refusal")
             if not isinstance(result.content, str):
-                raise SafetyCheckUnavailable(SAFETY_RETRY_MESSAGE)
+                raise SafetyCheckUnavailable(reason="invalid_content_type")
             decision = parse_decision(result.content, output=response is not None)
-        except Exception:
+        except Exception as exc:
             # Provider exceptions can contain submitted text. Do not log them or chain them.
+            reason = exc.reason if isinstance(exc, SafetyCheckUnavailable) else "provider_error"
             logger.warning(
-                "safety_check stage=%s outcome=unavailable model=%s duration_ms=%d",
+                "safety_check stage=%s outcome=unavailable model=%s duration_ms=%d "
+                "reason=%s finish_reason=%s completion_tokens=%s reasoning_tokens=%s",
                 stage,
                 getattr(self.model, "model_name", "injected"),
                 (monotonic() - started) * 1000,
+                reason,
+                finish_reason,
+                completion_tokens,
+                reasoning_tokens,
             )
             raise SafetyCheckUnavailable(SAFETY_RETRY_MESSAGE) from None
         allowed = decision.user_safe and (response is None or decision.response_safe is True)

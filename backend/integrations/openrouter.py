@@ -55,9 +55,14 @@ def create_safety_model(settings: Settings) -> ChatOpenAI:
         api_key=settings.openrouter_api_key,
         base_url=settings.openrouter_base_url,
         temperature=0,
-        max_tokens=256,
+        max_tokens=1024,
         timeout=20,
         max_retries=0,
         default_headers=_headers(settings),
-        extra_body={"provider": {"zdr": True}},
+        # Reasoning and the verdict share max_tokens. Keep reasoning for nuanced
+        # help-seeking classifications, with bounded room for complete labels.
+        extra_body={
+            "provider": {"zdr": True},
+            "reasoning": {"enabled": True, "exclude": True},
+        },
     )

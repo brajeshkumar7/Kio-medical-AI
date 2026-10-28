@@ -20,6 +20,13 @@ Safety requests explicitly require a ZDR endpoint. Account-level restrictions
 still apply. The legacy `:free` endpoint may be blocked by those restrictions.
 The implementation does not edit your real environment file or relax privacy.
 
+The classifier keeps reasoning enabled with a bounded 1,024-token completion
+budget, shared by reasoning and final labels. The previous 256-token limit could
+expire before a verdict even when OpenRouter returned HTTP 200. Reasoning text
+is excluded from returned content. Disabling reasoning was rejected during
+verification because it falsely refused a supportive help-seeking case.
+Truncated responses remain unavailable; a missing label is never treated as safe.
+
 The adapter follows NVIDIA's user-prompt/optional-assistant-response format:
 [model card](https://build.nvidia.com/nvidia/nemotron-3.5-content-safety/modelcard).
 Recent conversation context is bounded by `HISTORY_MESSAGE_LIMIT` and serialized
@@ -45,7 +52,9 @@ a user turn. A later account stream failure retains its existing user turn;
 guest failures remove the unanswered turn and refund the reserved quota.
 Existing disconnect accounting is unchanged.
 
-Logs contain only stage, allow/block/unavailable outcome, model ID, and duration.
+Logs contain stage, allow/block/unavailable outcome, model ID, and duration.
+Unavailable results also include a sanitized failure reason, finish reason,
+and completion/reasoning token counts when supplied by the provider.
 They omit conversation text, raw classifier output, and upstream exception
 messages. Do not enable SDK HTTP debug logs on real conversations.
 Configure the `backend.services.safety` logger at INFO level in deployment to
@@ -91,3 +100,19 @@ The evaluator exited nonzero because the unreadable result remains a release
 gate. This is a small synthetic integration check, not production certification.
 Investigate provider/format reliability and expand the evaluation before rollout;
 do not weaken parsing to turn this result into a passing score.
+
+## Classification reliability follow-up on 28 October 2026
+
+Synthetic diagnosis reproduced an HTTP-200 response with `finish_reason=length`,
+256 completion tokens and empty final content when reasoning exhausted the
+previous budget. With reasoning enabled and the budget raised to 1,024, the
+same 12-case v1 corpus returned all expected decisions: zero unavailable results,
+false refusals or missed unsafe cases in this run. The previously unreadable
+`output-label-injection` case completed and was correctly blocked. Observed p50
+was 1,250 ms and p95 was 2,641 ms. These are single-run observations, not latency
+guarantees or comprehensive medical/safety certification.
+
+The historical observation above remains recorded for comparison. The token
+budget change requires a backend redeploy; it does not require new environment
+values, data migrations or re-embedding. Keep fail-closed handling for future
+truncations, provider failures and invalid labels.

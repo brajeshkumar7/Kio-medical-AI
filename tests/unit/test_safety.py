@@ -108,7 +108,59 @@ def test_factory_is_bounded_and_enforces_zdr():
     assert model.request_timeout == 20
     assert model.max_retries == 0
     assert model.temperature == 0
-    assert model.extra_body == {"provider": {"zdr": True}}
+    assert model.max_tokens == 1024
+    assert model.extra_body == {
+        "provider": {"zdr": True},
+        "reasoning": {"enabled": True, "exclude": True},
+    }
+
+
+def test_truncated_http_success_is_unavailable_with_sanitized_diagnostics(caplog, monkeypatch):
+    # Alembic's integration tests disable existing loggers through fileConfig.
+    monkeypatch.setattr(logging.getLogger("backend.services.safety"), "disabled", False)
+
+    class TruncatedModel:
+        model_name = "test-classifier"
+
+        def invoke(self, _messages):
+            return AIMessage(
+                content="private classifier text",
+                response_metadata={"finish_reason": "length"},
+                usage_metadata={
+                    "input_tokens": 10,
+                    "output_tokens": 256,
+                    "total_tokens": 266,
+                    "output_token_details": {"reasoning": 256},
+                },
+            )
+
+    with caplog.at_level(logging.WARNING), pytest.raises(SafetyCheckUnavailable):
+        SafetyChecker(TruncatedModel()).check_input("private user content", [])
+    assert "reason=truncated finish_reason=length" in caplog.text
+    assert "completion_tokens=256 reasoning_tokens=256" in caplog.text
+    assert "private classifier text" not in caplog.text
+    assert "private user content" not in caplog.text
+
+
+def test_malformed_success_is_distinguishable_from_provider_failure(caplog, monkeypatch):
+    monkeypatch.setattr(logging.getLogger("backend.services.safety"), "disabled", False)
+    with caplog.at_level(logging.WARNING), pytest.raises(SafetyCheckUnavailable):
+        SafetyChecker(Model(content="private malformed verdict")).check_input("question", [])
+    assert "reason=invalid_classification" in caplog.text
+    assert "private malformed verdict" not in caplog.text
+
+
+def test_provider_refusal_cannot_be_overridden_by_safe_labels():
+    class RefusingModel:
+        def invoke(self, _messages):
+            return AIMessage(
+                content="User Safety: safe",
+                response_metadata={"finish_reason": "stop"},
+                additional_kwargs={"refusal": "refused"},
+            )
+
+    with pytest.raises(SafetyCheckUnavailable):
+        SafetyChecker(RefusingModel()).check_input("question", [])
 
 
 def test_no_answer_chunk_is_released_before_approval(safety_checker):
